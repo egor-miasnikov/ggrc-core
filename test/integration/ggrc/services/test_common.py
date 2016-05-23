@@ -14,6 +14,7 @@ import json
 import time
 from datetime import datetime
 from ggrc import db
+from ggrc.models.all_models import register_model
 from ggrc.models.mixins import Base
 from ggrc.services.common import Resource
 from integration.ggrc import TestCase
@@ -25,11 +26,12 @@ from nose.plugins.skip import SkipTest
 class ServicesTestMockModel(Base, ggrc.db.Model):
   __tablename__ = 'test_model'
   foo = db.Column(db.String)
+  title = db.Column(db.String)
   code = db.Column(db.String, unique=True)
 
   # REST properties
-  _publish_attrs = ['modified_by_id', 'foo', 'code']
-  _update_attrs = ['foo', 'code']
+  _publish_attrs = ['modified_by_id', 'foo', 'code', 'title']
+  _update_attrs = ['foo', 'code', 'title']
 
   def to_json(self):
     date_format = '%Y-%m-%dT%H:%M:%S'
@@ -52,6 +54,7 @@ class ServicesTestMockModel(Base, ggrc.db.Model):
         u'context': {u'id': self.context_id}
             if self.context_id is not None else None,
         u'foo': (unicode(self.foo) if self.foo else None),
+        u'title': (unicode(self.title) if self.title else None),
         u'code': (unicode(self.code) if self.code else None),
     }
 
@@ -314,6 +317,66 @@ class TestResource(TestCase):
                                              ('2013-04-03T00:00:00', 6),
                                              ('2013-04-03T00:00:00', 3))):
       self.assertEqual((model['updated_at'], model['id']), expected)
+
+  def test_collection_get_search(self):
+    """Test collection GET method from common.py with __search parameter."""
+
+    def make_mock_index(mock_model, property_list):
+      """Adds index records for listed properties of mock_model."""
+      from ggrc.fulltext import get_indexer
+      indexer = get_indexer()
+      for prop in property_list:
+        index_record = indexer.record_type(
+          key=mock_model.id,
+          type=mock_model.__class__.__name__,
+          property=prop,
+          content=getattr(mock_model, prop),
+        )
+        ggrc.db.session.add(index_record)
+      ggrc.db.session.commit()
+
+    def mock_search_url(query):
+      return self.mock_url() + '?__search={}'.format(query)
+
+    register_model(ServicesTestMockModel)
+
+    mock_model1 = self.mock_model(title='foo')
+    mock_model2 = self.mock_model(title='bar')
+    make_mock_index(mock_model1, ['title'])
+    make_mock_index(mock_model2, ['title'])
+    mock1 = mock_model1.to_json()
+    mock2 = mock_model2.to_json()
+
+    response = self.client.get(mock_search_url('foo'),
+                               headers=self.headers())
+    collection = response.json['test_model_collection']['test_model']
+    self.assertListEqual([mock1], collection)
+
+    response = self.client.get(mock_search_url('baz'),
+                               headers=self.headers())
+    collection = response.json['test_model_collection']['test_model']
+    self.assertListEqual([], collection)
+
+    response = self.client.get(mock_search_url('title=foo'),
+                               headers=self.headers())
+    collection = response.json['test_model_collection']['test_model']
+    self.assertListEqual([mock1], collection)
+
+    response = self.client.get(mock_search_url('title=baz'),
+                               headers=self.headers())
+    collection = response.json['test_model_collection']['test_model']
+    self.assertListEqual([], collection)
+
+    response = self.client.get(mock_search_url('title!=foo'),
+                               headers=self.headers())
+    collection = response.json['test_model_collection']['test_model']
+    self.assertListEqual([mock2], collection)
+
+    response = self.client.get(mock_search_url('title!=baz'),
+                               headers=self.headers())
+    collection = response.json['test_model_collection']['test_model']
+    self.assertListEqual(sorted([mock1, mock2], key=lambda json: json['id']),
+                         sorted(collection, key=lambda json: json['id']))
 
   def test_resource_get(self):
     """Test resource GET method from common.py"""

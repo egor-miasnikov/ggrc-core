@@ -49,6 +49,18 @@ class MysqlRecordProperty(db.Model):
         {'mysql_engine': 'myisam'},
     )
 
+  _field_whitelist_raw = ['title', 'name', 'email', 'notes', 'description',
+                          'slug']
+
+  @classmethod
+  def _field_whitelist(cls):
+    return or_(
+        # Because property values for custom attributes are
+        # `attribute_value_<id>`
+        cls.property.contains('attribute_value'),
+        cls.property.in_(cls._field_whitelist_raw),
+    )
+
 event.listen(
     MysqlRecordProperty.__table__,
     'after_create',
@@ -118,23 +130,46 @@ class MysqlIndexer(SqlIndexer):
         or_(*type_queries))
 
   def _get_filter_query(self, terms):
-    whitelist = or_(
-        # Because property values for custom attributes are
-        # `attribute_value_<id>`
-        MysqlRecordProperty.property.contains('attribute_value'),
-        MysqlRecordProperty.property.in_(
-            ['title', 'name', 'email', 'notes', 'description', 'slug'])
-    )
+    """Parse `__search` query terms, return an SqlAlchemy filtering clause.
+
+    Supported syntax:
+      <terms> ::= <value> |  # any indexed field contains `value`
+                  <field_name> = <value> |  # `field_name` value
+                                            # is exactly `value`
+                  <field_name> != <value>  # `field_name` value
+                                           # is not exactly `value`
+      <value> ::= <any sequence not containing = sign>
+      <field_name> ::= <indexed field name>
+    `field_name` should be equal to a name of an indexed field for the queried
+    type of object
+    """
+    # Note: This is an incomplete search syntax, much simpler than the
+    # Note: documented functionality: ~, !~, <, >, compound clauses (AND, OR)
+    # Note: are not implemented yet.
     if not terms:
-      return whitelist
-    elif terms:
-      return and_(whitelist, MysqlRecordProperty.content.contains(terms))
+      filters = MysqlRecordProperty._field_whitelist()
+    elif '!=' in terms:
+      column_name, value = terms.split('!=', 1)
+      filters = and_(
+        MysqlRecordProperty.property == column_name.strip().lower(),
+        MysqlRecordProperty.content != value.strip().lower(),
+      )
+    elif '=' in terms:
+      column_name, value = terms.split('=', 1)
+      filters = and_(
+        MysqlRecordProperty.property == column_name.strip().lower(),
+        MysqlRecordProperty.content == value.strip().lower(),
+      )
+    else:
+      filters = and_(MysqlRecordProperty._field_whitelist(),
+                     MysqlRecordProperty.content.contains(terms))
 
     # FIXME: Temporary (slow) fix for words shorter than MySQL default limit
     # elif len(terms) < 4:
     #   return MysqlRecordProperty.content.contains(terms)
     # else:
     #   return MysqlRecordProperty.content.match(terms)
+    return filters
 
   def _get_type_select_column(self, model):
     mapper = model._sa_class_manager.mapper
