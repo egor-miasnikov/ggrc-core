@@ -3,6 +3,10 @@
 # Created By: david@reciprocitylabs.com
 # Maintained By: david@reciprocitylabs.com
 
+"""
+Test common REST API calls
+"""
+
 import ggrc
 import ggrc.builder
 import ggrc.services
@@ -75,20 +79,20 @@ class TestResource(TestCase):
             u'type': 'Person',
             u'context_id': None
         } if model.modified_by_id is not None else None,
-        u'modified_by_id': int(model.modified_by_id),
+        u'modified_by_id': (int(model.modified_by_id)
+                            if model.modified_by_id is not None else None),
         u'updated_at': updated_at,
         u'created_at': created_at,
         u'context':
             {u'id': model.context_id}
             if model.context_id is not None else None,
         u'foo': (unicode(model.foo) if model.foo else None),
+        u'code': (unicode(model.code) if model.code else None),
     }
 
-  def mock_model(self, id=None, modified_by_id=1, **kwarg):
+  def mock_model(self, **kwarg):
     if 'id' not in kwarg:
       kwarg['id'] = random.randint(0, 999999999)
-    if 'modified_by_id' not in kwarg:
-      kwarg['modified_by_id'] = 1
     mock = ServicesTestMockModel(**kwarg)
     ggrc.db.session.add(mock)
     ggrc.db.session.commit()
@@ -141,14 +145,22 @@ class TestResource(TestCase):
     response = self.client.get(self.mock_url('foo'), headers=self.headers())
     self.assert404(response)
 
-  @SkipTest
   def test_collection_get(self):
+    """Test collection GET method from common.py"""
     date1 = datetime(2013, 4, 17, 0, 0, 0, 0)
     date2 = datetime(2013, 4, 20, 0, 0, 0, 0)
-    mock1 = self.mock_model(
-        modified_by_id=42, created_at=date1, updated_at=date1)
-    mock2 = self.mock_model(
-        modified_by_id=43, created_at=date2, updated_at=date2)
+    mock1 = self.mock_model(created_at=date1, updated_at=date1)
+    mock2 = self.mock_model(created_at=date2, updated_at=date2)
+
+    # Note: Flask-SQLAlchemy also removes the session instance at the end of
+    # every request. Therefore the session is cleared along with any objects
+    # added to it every time you call client.get() or another client method
+    # In order to get rid of DetachedInstance error we need to generate JSON
+    # representation before making a request or re-add the object instance
+    # back to the session with db.session.add(mock)
+    obj_json1 = self.mock_json(mock1)
+    obj_json2 = self.mock_json(mock2)
+
     response = self.client.get(self.mock_url(), headers=self.headers())
     self.assert200(response)
     self.assertRequiredHeaders(
@@ -163,14 +175,14 @@ class TestResource(TestCase):
     self.assertIn('test_model', response.json['test_model_collection'])
     collection = response.json['test_model_collection']['test_model']
     self.assertEqual(2, len(collection))
-    self.assertDictEqual(self.mock_json(mock2), collection[0])
-    self.assertDictEqual(self.mock_json(mock1), collection[1])
+    self.assertDictEqual(obj_json2, collection[0])
+    self.assertDictEqual(obj_json1, collection[1])
 
-  @SkipTest
   def test_resource_get(self):
+    """Test resource GET method from common.py"""
     date1 = datetime(2013, 4, 17, 0, 0, 0, 0)
-    mock1 = self.mock_model(
-        modified_by_id=42, created_at=date1, updated_at=date1)
+    mock1 = self.mock_model(created_at=date1, updated_at=date1)
+    obj_json = self.mock_json(mock1)
     response = self.client.get(self.mock_url(mock1.id), headers=self.headers())
     self.assert200(response)
     self.assertRequiredHeaders(
@@ -180,8 +192,7 @@ class TestResource(TestCase):
             'Content-Type': 'application/json',
         })
     self.assertIn('services_test_mock_model', response.json)
-    self.assertDictEqual(self.mock_json(mock1),
-                         response.json['services_test_mock_model'])
+    self.assertDictEqual(obj_json, response.json['services_test_mock_model'])
 
   def test_collection_put(self):
     self.assertAllow(
