@@ -238,6 +238,7 @@ dashboard-js-template-files:
   - assessments/tree_header.mustache
   - assessments/tree_footer.mustache
   - assessments/tree_add_item.mustache
+  - assessments/tree_pagination.mustache
   - assessments/info.mustache
   - assessments/reusable_objects.mustache
   - assessments/header.mustache

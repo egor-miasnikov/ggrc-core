@@ -1917,4 +1917,14 @@ can.Control('CMS.Controllers.TreeViewNode', {
       }
     }
   });
+
+  can.Component.extend({
+    tag: 'tree-view-pagination',
+    template: can.view(GGRC.mustache_path + '/assessments/tree_pagination.mustache'),
+    scope: {
+      total: 100
+    },
+    events: {
+    }
+  });
 })(this.can, this.can.$);

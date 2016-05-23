@@ -74,6 +74,74 @@
       }
     }
   }
+  .ggrc-pagination {
+    .count {
+      display: inline-block;
+      width: 120px;
+      vertical-align: top;
+      h6 {
+        font-weight: normal;
+        text-transform: none;
+        font-size: 12px;
+        text-align: right;
+        padding-top: 5px;
+      }
+    }
+    .dropdown-menu {
+      padding: 10px;
+      .btn-group {
+        .btn {
+          color: black;
+          font-size: 14px;
+          font-weight: normal;
+          border: 1px solid #a5a5a5;
+          background: white;
+          border-radius: 0;
+          &.active {
+            background: #a5a5a5;
+          }
+        }
+      }
+    }
+    .pagination {
+      margin: 0;
+      display: inline-block;
+      ul {
+        margin-left: 10px;
+      }
+      li {
+        &:first-child {
+          a {
+            border-left-width: 1px;
+          }
+        }
+        a {
+          color: #000;
+          border: 1px solid #a5a5a5;
+          border-left-width: 0;
+          line-height: 24px;
+          background: #eee;
+          padding: 0 10px;
+          &:hover {
+            color: #999;
+          }
+        }
+        input {
+          vertical-align: top;
+          border-radius: 0;
+          height: 16px;
+          margin-bottom:0;
+          background-color: #fff;
+          border-top: 1px solid #a5a5a5;
+          border-bottom: 1px solid #a5a5a5;
+          border-left-width: 0;
+          width:40px;
+          float:left;
+          text-align: center;
+        }
+      }
+    }
+  }
   .filter {
     padding:3px 2px;
     background: $filterBgnd;
