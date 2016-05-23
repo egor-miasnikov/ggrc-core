@@ -3,6 +3,10 @@
 # Created By: david@reciprocitylabs.com
 # Maintained By: david@reciprocitylabs.com
 
+"""
+Test common REST API calls
+"""
+
 import ggrc
 import ggrc.builder
 import ggrc.services
@@ -27,6 +31,30 @@ class ServicesTestMockModel(Base, ggrc.db.Model):
   # REST properties
   _publish_attrs = ['modified_by_id', 'foo', 'code']
   _update_attrs = ['foo', 'code']
+
+  def to_json(self):
+      date_format = '%Y-%m-%dT%H:%M:%S'
+      updated_at = unicode(self.updated_at.strftime(date_format))
+      created_at = unicode(self.created_at.strftime(date_format))
+      return {
+          u'id': int(self.id),
+          u'selfLink': unicode(URL_MOCK_RESOURCE.format(self.id)),
+          u'type': unicode(self.__class__.__name__),
+          u'modified_by': {
+              u'href': u'/api/people/1',
+              u'id': self.modified_by_id,
+              u'type': 'Person',
+              u'context_id': None
+          } if self.modified_by_id is not None else None,
+          u'modified_by_id': (int(self.modified_by_id)
+                              if self.modified_by_id is not None else None),
+          u'updated_at': updated_at,
+          u'created_at': created_at,
+          u'context': {u'id': self.context_id}
+              if self.context_id is not None else None,
+          u'foo': (unicode(self.foo) if self.foo else None),
+          u'code': (unicode(self.code) if self.code else None),
+      }
 
 URL_MOCK_COLLECTION = '/api/mock_resources'
 URL_MOCK_RESOURCE = '/api/mock_resources/{0}'
@@ -61,34 +89,9 @@ class TestResource(TestCase):
       return URL_MOCK_RESOURCE.format(resource)
     return URL_MOCK_COLLECTION
 
-  def mock_json(self, model):
-    format = '%Y-%m-%dT%H:%M:%S'
-    updated_at = unicode(model.updated_at.strftime(format))
-    created_at = unicode(model.created_at.strftime(format))
-    return {
-        u'id': int(model.id),
-        u'selfLink': unicode(URL_MOCK_RESOURCE.format(model.id)),
-        u'type': unicode(model.__class__.__name__),
-        u'modified_by': {
-            u'href': u'/api/people/1',
-            u'id': model.modified_by_id,
-            u'type': 'Person',
-            u'context_id': None
-        } if model.modified_by_id is not None else None,
-        u'modified_by_id': int(model.modified_by_id),
-        u'updated_at': updated_at,
-        u'created_at': created_at,
-        u'context':
-            {u'id': model.context_id}
-            if model.context_id is not None else None,
-        u'foo': (unicode(model.foo) if model.foo else None),
-    }
-
-  def mock_model(self, id=None, modified_by_id=1, **kwarg):
+  def mock_model(self, **kwarg):
     if 'id' not in kwarg:
       kwarg['id'] = random.randint(0, 999999999)
-    if 'modified_by_id' not in kwarg:
-      kwarg['modified_by_id'] = 1
     mock = ServicesTestMockModel(**kwarg)
     ggrc.db.session.add(mock)
     ggrc.db.session.commit()
@@ -101,8 +104,9 @@ class TestResource(TestCase):
     """Ignore the `http://localhost` prefix of the Location"""
     return response.headers['Location'][16:]
 
-  def assertRequiredHeaders(self, response,
-                            headers={'Content-Type': 'application/json'}):
+  def assertRequiredHeaders(self, response, headers=None):
+    if headers is None:
+        headers = {'Content-Type': 'application/json'}
     self.assertIn('Etag', response.headers)
     self.assertIn('Last-Modified', response.headers)
     self.assertIn('Content-Type', response.headers)
@@ -141,14 +145,20 @@ class TestResource(TestCase):
     response = self.client.get(self.mock_url('foo'), headers=self.headers())
     self.assert404(response)
 
-  @SkipTest
   def test_collection_get(self):
+    """Test collection GET method from common.py"""
     date1 = datetime(2013, 4, 17, 0, 0, 0, 0)
     date2 = datetime(2013, 4, 20, 0, 0, 0, 0)
-    mock1 = self.mock_model(
-        modified_by_id=42, created_at=date1, updated_at=date1)
-    mock2 = self.mock_model(
-        modified_by_id=43, created_at=date2, updated_at=date2)
+
+    # Note: Flask-SQLAlchemy also removes the session instance at the end of
+    # every request. Therefore the session is cleared along with any objects
+    # added to it every time you call client.get() or another client method
+    # In order to get rid of DetachedInstance error we need to generate JSON
+    # representation before making a request or re-add the object instance
+    # back to the session with db.session.add(mock)
+    mock1 = self.mock_model(created_at=date1, updated_at=date1).to_json()
+    mock2 = self.mock_model(created_at=date2, updated_at=date2).to_json()
+
     response = self.client.get(self.mock_url(), headers=self.headers())
     self.assert200(response)
     self.assertRequiredHeaders(
@@ -163,15 +173,14 @@ class TestResource(TestCase):
     self.assertIn('test_model', response.json['test_model_collection'])
     collection = response.json['test_model_collection']['test_model']
     self.assertEqual(2, len(collection))
-    self.assertDictEqual(self.mock_json(mock2), collection[0])
-    self.assertDictEqual(self.mock_json(mock1), collection[1])
+    self.assertDictEqual(mock2, collection[0])
+    self.assertDictEqual(mock1, collection[1])
 
-  @SkipTest
   def test_resource_get(self):
+    """Test resource GET method from common.py"""
     date1 = datetime(2013, 4, 17, 0, 0, 0, 0)
-    mock1 = self.mock_model(
-        modified_by_id=42, created_at=date1, updated_at=date1)
-    response = self.client.get(self.mock_url(mock1.id), headers=self.headers())
+    mock1 = self.mock_model(created_at=date1, updated_at=date1).to_json()
+    response = self.client.get(self.mock_url(mock1['id']), headers=self.headers())
     self.assert200(response)
     self.assertRequiredHeaders(
         response,
@@ -180,8 +189,7 @@ class TestResource(TestCase):
             'Content-Type': 'application/json',
         })
     self.assertIn('services_test_mock_model', response.json)
-    self.assertDictEqual(self.mock_json(mock1),
-                         response.json['services_test_mock_model'])
+    self.assertDictEqual(mock1, response.json['services_test_mock_model'])
 
   def test_collection_put(self):
     self.assertAllow(
