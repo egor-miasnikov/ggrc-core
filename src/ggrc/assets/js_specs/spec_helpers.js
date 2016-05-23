@@ -30,3 +30,9 @@ window.failAll = function(done) {
     done && done();
   };
 };
+
+GGRC.page_instance = function(){
+  return {
+    type: "Assessment"
+  }
+};

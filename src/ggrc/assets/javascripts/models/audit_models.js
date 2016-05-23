@@ -715,7 +715,23 @@
     root_object: 'assessment',
     root_collection: 'assessments',
     findOne: 'GET /api/assessments/{id}',
-    findAll: 'GET /api/assessments',
+    findAll: function (params) {
+      var url = '/api/assessments';
+      var page_instance = GGRC.page_instance();
+
+      if(page_instance.type === 'Audit' && this.shortName === 'Assessment') {
+        params = this._generate_pagination_request_params(params);
+      }
+
+      return $.ajax({
+        type: 'GET',
+        url: url,
+        data: params,
+        headers: {
+          Accept:'application/json, text/javascript, */*; q=0.01'
+        }
+      }).promise();
+    },
     update: 'PUT /api/assessments/{id}',
     destroy: 'DELETE /api/assessments/{id}',
     create: 'POST /api/assessments',
@@ -864,6 +880,15 @@
           }
         }
       );
+    },
+    _generate_pagination_request_params: function (params) {
+      return {
+        __page: params.page || 1,
+        __page_size: params.page_size || 5,
+        __search: params.search_value || '',
+        __sort: params.sort_value || 'title|description_inline|name|email',
+        __sort_desc: params.sort_desc || false
+      };
     }
   }, {
     form_preload: function (newObjectForm) {
