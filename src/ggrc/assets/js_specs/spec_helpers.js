@@ -22,17 +22,11 @@ function waitsFor(check, done) {
 }
 
 // This is primarily useful for passing as the fail case for
-//  promises, since every item passed to it will show up in 
+//  promises, since every item passed to it will show up in
 //  the jasmine output.
 window.failAll = function(done) {
   return function() {
     can.each(arguments, function(arg) { fail(JSON.stringify(arg)); });
     done && done();
   };
-};
-
-GGRC.page_instance = function(){
-  return {
-    type: "Assessment"
-  }
 };
