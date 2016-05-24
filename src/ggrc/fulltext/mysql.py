@@ -136,8 +136,8 @@ class MysqlIndexer(SqlIndexer):
     type of object
     """
     # Note: This is an incomplete search syntax, much simpler than the
-    # Note: documented functionality: ~, !~, <, >, compound clauses (AND, OR)
-    # Note: are not implemented yet.
+    # documented functionality: ~, !~, <, >, compound clauses (AND, OR)
+    # are not implemented yet.
     if not terms:
       filters = self._default_search_fields()
     elif '!=' in terms:
