@@ -3415,7 +3415,6 @@ Mustache.registerHelper("math", function (lvalue, operator, rvalue, options) {
 });
 
 Mustache.registerHelper("page_info", function (current, page_size, total, options) {
-  debugger;
   current = parseFloat(Mustache.resolve(current));
   page_size = parseFloat(Mustache.resolve(page_size));
   total = parseFloat(Mustache.resolve(total));
