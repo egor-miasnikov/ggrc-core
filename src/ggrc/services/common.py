@@ -9,6 +9,7 @@ resources.
 """
 
 import datetime
+import functools
 import hashlib
 import json
 import logging
@@ -421,15 +422,14 @@ class ModelView(View):
 
   def get_match_columns(self, model):
     mapper = model._sa_class_manager.mapper
-    columns = []
-    columns.append(mapper.primary_key[0].label('id'))
-    # columns.append(model.id.label('id'))
-    columns.append(self._get_type_select_column(model).label('type'))
-    if hasattr(mapper.c, 'context_id'):
-      columns.append(mapper.c.context_id.label('context_id'))
-    if hasattr(mapper.c, 'updated_at'):
-      columns.append(mapper.c.updated_at.label('updated_at'))
-    # columns.append(self._get_polymorphic_column(model))
+    columns = [
+        mapper.primary_key[0].label('id'),
+        self._get_type_select_column(model).label('type'),
+    ]
+    for column_name in ('context_id', 'updated_at'):
+      if hasattr(mapper.c, column_name):
+        columns.append(getattr(mapper.c, column_name).label(column_name))
+
     return columns
 
   def get_collection_matches(self, model, filter_by_contexts=True):
@@ -466,6 +466,7 @@ class ModelView(View):
         for j in joinlist:
           query = query.join(j)
         query = query.filter(filter_)
+
     if filter_by_contexts:
       contexts = permissions.read_contexts_for(self.model.__name__)
       resources = permissions.read_resources_for(self.model.__name__)
@@ -484,6 +485,7 @@ class ModelView(View):
           query = query.filter(j_filter_expr)
         elif resources:
           query = query.filter(self.model.id.in_(resources))
+
     if '__search' in request.args:
       terms = request.args['__search']
       types = self._get_matching_types(self.model)
@@ -498,10 +500,11 @@ class ModelView(View):
             search_query, models, get_current_user_id())
       search_subquery = search_query.subquery()
       query = query.filter(self.model.id.in_(search_subquery))
+
     order_properties = []
     if '__sort' in request.args:
       sort_attrs = request.args['__sort'].split(",")
-      sort_desc = request.args.get('__sort_desc', False)
+      sort_desc = request.args.get('__sort_desc', 'false') == 'true'
       for sort_attr in sort_attrs:
         attr_desc = sort_desc
         if sort_attr.startswith('-'):
@@ -509,24 +512,26 @@ class ModelView(View):
           sort_attr = sort_attr[1:]
         order_property = getattr(self.model, sort_attr, None)
         if order_property and hasattr(order_property, 'desc'):
-          if attr_desc:
-            order_property = order_property.desc()
-          order_properties.append(order_property)
+          order_properties.append(
+              order_property.desc() if attr_desc else order_property.asc()
+          )
         else:
           # Possibly throw an exception instead,
           # if sorting by invalid attribute?
           pass
+
     order_properties.append(self.modified_attr.desc())
     order_properties.append(self.model.id.desc())
     query = query.order_by(*order_properties)
+
     if '__limit' in request.args:
       try:
         limit = int(request.args['__limit'])
         query = query.limit(limit)
       except (TypeError, ValueError):
         pass
-    query = query.distinct()
-    return query
+
+    return query.distinct()
 
   def get_object(self, id):
     # This could also use `self.pk`
@@ -670,8 +675,8 @@ class Resource(ModelView):
       "Model DELETEd",
       """
       Indicates that a model object was DELETEd and will be removed from the
-      databse. The sender in the signal will be the model class of the DELETEd
-      resource. The followin garguments will be sent along with the signal:
+      database. The sender in the signal will be the model class of the DELETEd
+      resource. The following arguments will be sent along with the signal:
 
         :obj: The model instance removed.
         :service: The instance of Resource handling the DELETE request.
@@ -681,11 +686,23 @@ class Resource(ModelView):
       """
       Indicates that a model object was DELETEd and has been removed from the
       database. The sender in the signal will be the model class of the DELETEd
-      resource. The followin garguments will be sent along with the signal:
+      resource. The following arguments will be sent along with the signal:
 
         :obj: The model instance removed.
         :service: The instance of Resource handling the DELETE request.
       """,)
+
+  def _check_accept_header(func):  #pylint: disable=no-self-argument
+    """Check the 'Accept' header and return 406 response if not present."""
+    @functools.wraps(func)
+    def wrapped(self, *args, **kwargs):  # pylint: disable=missing-docstring
+      if ('Accept' in self.request.headers and
+              'application/json' not in self.request.headers['Accept']):
+        return current_app.make_response(
+            ('application/json', 406, [('Content-Type', 'text/plain')])
+        )
+      return func(self, *args, **kwargs)
+    return wrapped
 
   def dispatch_request(self, *args, **kwargs):  # noqa
     with benchmark("Dispatch request"):
@@ -731,16 +748,14 @@ class Resource(ModelView):
   def post(*args, **kwargs):
     raise NotImplementedError()
 
+  @_check_accept_header
   def get(self, id):
     """Default JSON request handlers"""
     with benchmark("Query for object"):
       obj = self.get_object(id)
     if obj is None:
       return self.not_found_response()
-    if 'Accept' in self.request.headers and \
-       'application/json' not in self.request.headers['Accept']:
-      return current_app.make_response((
-          'application/json', 406, [('Content-Type', 'text/plain')]))
+
     with benchmark("Query read permissions"):
       if not permissions.is_allowed_read(
           self.model.__name__, obj.id, obj.context_id)\
@@ -748,6 +763,7 @@ class Resource(ModelView):
         raise Forbidden()
       if not permissions.is_allowed_read_for(obj):
         raise Forbidden()
+
     with benchmark("Serialize object"):
       object_for_json = self.object_for_json(obj)
 
@@ -933,30 +949,32 @@ class Resource(ModelView):
     return matches, collection_extras
 
   def get_matched_resources(self, matches):
-    cache_objs = {}
+    objs_map = {}
     if self.has_cache():
       self.request.cache_manager = _get_cache_manager()
       with benchmark("Query cache for resources"):
-        cache_objs = self.get_resources_from_cache(matches)
-      database_matches = [m for m in matches if m not in cache_objs]
+        objs_map = self.get_resources_from_cache(matches)
+      database_matches = [m for m in matches if m not in objs_map]
     else:
       database_matches = matches
 
-    database_objs = {}
-    if len(database_matches) > 0:
+    cache_op = 'Hit' if objs_map else 'Miss'
+    if database_matches:
       with benchmark("Query database for resources"):
         database_objs = self.get_resources_from_database(matches)
+        objs_map.update(database_objs)
       if self.has_cache():
         with benchmark("Add resources to cache"):
           self.add_resources_to_cache(database_objs)
-    return cache_objs, database_objs
 
+    # NOTE: This will keep the right objects order (same is for matches).
+    objs = [objs_map[m] for m in matches if m in objs_map]
+
+    return objs, cache_op
+
+  @_check_accept_header
   def collection_get(self):
-    with benchmark("dispatch_request > collection_get > Check headers"):
-      if 'Accept' in self.request.headers and \
-         'application/json' not in self.request.headers['Accept']:
-        return current_app.make_response((
-            'application/json', 406, [('Content-Type', 'text/plain')]))
+    # get collection matches, apply search and sorting
     with benchmark("dispatch_request > collection_get > Collection matches"):
       # We skip querying by contexts for Creator role and relationship objects,
       # because it will filter out objects that the Creator can access.
@@ -966,7 +984,11 @@ class Resource(ModelView):
           self.model.__name__ in ("Relationship", "Revision") and _is_creator()
       )
       matches_query = self.get_collection_matches(
-          self.model, filter_by_contexts)
+          model=self.model,
+          filter_by_contexts=filter_by_contexts,
+      )
+
+    # apply collection pagination
     with benchmark("dispatch_request > collection_get > Query Data"):
       if '__page' in request.args or '__page_only' in request.args:
         with benchmark("Query matches with paging"):
@@ -975,6 +997,8 @@ class Resource(ModelView):
         with benchmark("Query matches"):
           matches = matches_query.all()
           extras = {}
+
+    # get collection matched resources from cache and db
     with benchmark("dispatch_request > collection_get > Matched resources"):
       cache_op = None
       if '__stubs_only' in request.args:
@@ -982,20 +1006,14 @@ class Resource(ModelView):
             'id': m[0],
             'type': m[1],
             'href': utils.url_for(m[1], id=m[0]),
-            'context_id': m[2]
+            'context_id': m[2],
         } for m in matches]
-
       else:
-        cache_objs, database_objs = self.get_matched_resources(matches)
-        objs = {}
-        objs.update(cache_objs)
-        objs.update(database_objs)
-
-        objs = [objs[m] for m in matches if m in objs]
+        objs, cache_op = self.get_matched_resources(matches=matches)
         with benchmark("Filter resources based on permissions"):
           objs = filter_resource(objs)
 
-        cache_op = 'Hit' if len(cache_objs) > 0 else 'Miss'
+    # serialize collection and make response
     with benchmark("dispatch_request > collection_get > Create Response"):
       # Return custom fields specified via `__fields=id,title,description` etc.
       # TODO this can be optimized by filter_resource() not retrieving
@@ -1004,17 +1022,19 @@ class Resource(ModelView):
         custom_fields = request.args['__fields'].split(',')
         objs = [{f: o[f] for f in custom_fields if f in o} for o in objs]
       with benchmark("Serialize collection"):
-        collection = self.build_collection_representation(
-            objs, extras=extras)
+        collection = self.build_collection_representation(objs, extras=extras)
 
-      if 'If-None-Match' in self.request.headers and \
-         self.request.headers['If-None-Match'] == etag(collection):
+      if ('If-None-Match' in self.request.headers and
+              self.request.headers['If-None-Match'] == etag(collection)):
         return current_app.make_response((
             '', 304, [('Etag', etag(collection))]))
 
       with benchmark("Make response"):
         return self.json_success_response(
-            collection, self.collection_last_modified(), cache_op=cache_op)
+            response_object=collection,
+            last_modified=self.collection_last_modified(),
+            cache_op=cache_op,
+        )
 
   def get_resources_from_cache(self, matches):
     """Get resources from cache for specified matches"""

@@ -11,7 +11,6 @@ import ggrc
 import ggrc.builder
 import ggrc.services
 import json
-import random
 import time
 from datetime import datetime
 from ggrc import db
@@ -33,28 +32,28 @@ class ServicesTestMockModel(Base, ggrc.db.Model):
   _update_attrs = ['foo', 'code']
 
   def to_json(self):
-      date_format = '%Y-%m-%dT%H:%M:%S'
-      updated_at = unicode(self.updated_at.strftime(date_format))
-      created_at = unicode(self.created_at.strftime(date_format))
-      return {
-          u'id': int(self.id),
-          u'selfLink': unicode(URL_MOCK_RESOURCE.format(self.id)),
-          u'type': unicode(self.__class__.__name__),
-          u'modified_by': {
-              u'href': u'/api/people/1',
-              u'id': self.modified_by_id,
-              u'type': 'Person',
-              u'context_id': None
-          } if self.modified_by_id is not None else None,
-          u'modified_by_id': (int(self.modified_by_id)
-                              if self.modified_by_id is not None else None),
-          u'updated_at': updated_at,
-          u'created_at': created_at,
-          u'context': {u'id': self.context_id}
-              if self.context_id is not None else None,
-          u'foo': (unicode(self.foo) if self.foo else None),
-          u'code': (unicode(self.code) if self.code else None),
-      }
+    date_format = '%Y-%m-%dT%H:%M:%S'
+    updated_at = unicode(self.updated_at.strftime(date_format))
+    created_at = unicode(self.created_at.strftime(date_format))
+    return {
+        u'id': int(self.id),
+        u'selfLink': unicode(URL_MOCK_RESOURCE.format(self.id)),
+        u'type': unicode(self.__class__.__name__),
+        u'modified_by': {
+            u'href': u'/api/people/1',
+            u'id': self.modified_by_id,
+            u'type': 'Person',
+            u'context_id': None
+        } if self.modified_by_id is not None else None,
+        u'modified_by_id': (int(self.modified_by_id)
+                            if self.modified_by_id is not None else None),
+        u'updated_at': updated_at,
+        u'created_at': created_at,
+        u'context': {u'id': self.context_id}
+            if self.context_id is not None else None,
+        u'foo': (unicode(self.foo) if self.foo else None),
+        u'code': (unicode(self.code) if self.code else None),
+    }
 
 URL_MOCK_COLLECTION = '/api/mock_resources'
 URL_MOCK_RESOURCE = '/api/mock_resources/{0}'
@@ -66,6 +65,8 @@ RESOURCE_ALLOWED = ['HEAD', 'GET', 'PUT', 'DELETE', 'OPTIONS']
 
 
 class TestResource(TestCase):
+  """Resource unit tests suite."""
+
   def setUp(self):
     super(TestResource, self).setUp()
     # Explicitly create test tables
@@ -84,33 +85,73 @@ class TestResource(TestCase):
     if ServicesTestMockModel.__table__.exists(db.engine):
       ServicesTestMockModel.__table__.drop(db.engine)
 
-  def mock_url(self, resource=None):
+  @staticmethod
+  def mock_url(resource=None, page=None, page_size=None, sort=None,
+               sort_desc=None):
     if resource is not None:
       return URL_MOCK_RESOURCE.format(resource)
-    return URL_MOCK_COLLECTION
 
-  def mock_model(self, **kwarg):
-    if 'id' not in kwarg:
-      kwarg['id'] = random.randint(0, 999999999)
-    mock = ServicesTestMockModel(**kwarg)
+    params = []
+    if page is not None:
+      params.append('__page=%s' % page)
+    if page_size is not None:
+      params.append('__page_size=%s' % page_size)
+    if sort is not None:
+      params.append('__sort=%s' % sort)
+    if sort_desc is not None:
+      params.append('__sort_desc=%s' % 'true' if sort_desc else 'false')
+
+    return ('?'.join([URL_MOCK_COLLECTION, '&'.join(params)])
+            if params else URL_MOCK_COLLECTION)
+
+  @staticmethod
+  def mock_model(**kwargs):
+    mock = ServicesTestMockModel(**kwargs)
     ggrc.db.session.add(mock)
     ggrc.db.session.commit()
     return mock
 
-  def http_timestamp(self, timestamp):
+  def mock_models(self, count=1, to_json=False):
+    """Mock models of a given count."""
+    items = []
+    for i in xrange(count):
+      date = datetime(2013, 4, 1 + i, 0, 0, 0, 0)
+      item = self.mock_model(created_at=date, updated_at=date)
+      items.append(item.to_json() if to_json else item)
+
+    return items
+
+  @staticmethod
+  def http_timestamp(timestamp):
     return format_date_time(time.mktime(timestamp.utctimetuple()))
 
-  def get_location(self, response):
+  @staticmethod
+  def get_location(response):
     """Ignore the `http://localhost` prefix of the Location"""
     return response.headers['Location'][16:]
 
+  @staticmethod
+  def headers(*args, **kwargs):
+    ret = list(args)
+    ret.append(('X-Requested-By', 'Unit Tests'))
+    ret.extend(kwargs.items())
+    return ret
+
+  @staticmethod
+  def parse_response(response):
+    collection = response.json['test_model_collection']
+    models = collection['test_model']
+    return models, collection
+
   def assertRequiredHeaders(self, response, headers=None):
-    if headers is None:
-        headers = {'Content-Type': 'application/json'}
+    default_headers = {'Content-Type': 'application/json'}
+    if headers is not None:
+      default_headers.update(headers)
+
     self.assertIn('Etag', response.headers)
     self.assertIn('Last-Modified', response.headers)
     self.assertIn('Content-Type', response.headers)
-    for k, v in headers.items():
+    for k, v in default_headers.items():
       self.assertEqual(v, response.headers.get(k))
 
   def assertAllow(self, response, allowed=None):
@@ -123,13 +164,12 @@ class TestResource(TestCase):
     self.assertIn('Allow', response.headers)
     self.assertItemsEqual(allowed, response.headers['Allow'].split(', '))
 
-  def headers(self, *args, **kwargs):
-    ret = list(args)
-    ret.append(('X-Requested-By', 'Unit Tests'))
-    ret.extend(kwargs.items())
-    return ret
+  def assertKeysIn(self, keys, data):
+    """Assert keys are present in a given dict."""
+    for key in keys:
+      self.assertIn(key, data)
 
-  def test_X_Requested_By_required(self):
+  def test_x_requested_by_required(self):
     response = self.client.post(self.mock_url())
     self.assert400(response)
     response = self.client.put(self.mock_url() + '/1', data='blah')
@@ -147,8 +187,7 @@ class TestResource(TestCase):
 
   def test_collection_get(self):
     """Test collection GET method from common.py"""
-    date1 = datetime(2013, 4, 17, 0, 0, 0, 0)
-    date2 = datetime(2013, 4, 20, 0, 0, 0, 0)
+    last_modified = datetime(2013, 4, 2, 0, 0, 0, 0)
 
     # Note: Flask-SQLAlchemy also removes the session instance at the end of
     # every request. Therefore the session is cleared along with any objects
@@ -156,40 +195,136 @@ class TestResource(TestCase):
     # In order to get rid of DetachedInstance error we need to generate JSON
     # representation before making a request or re-add the object instance
     # back to the session with db.session.add(mock)
-    mock1 = self.mock_model(created_at=date1, updated_at=date1).to_json()
-    mock2 = self.mock_model(created_at=date2, updated_at=date2).to_json()
+    models = self.mock_models(count=2, to_json=True)
 
     response = self.client.get(self.mock_url(), headers=self.headers())
     self.assert200(response)
     self.assertRequiredHeaders(
-        response,
-        {
-            'Last-Modified': self.http_timestamp(date2),
-            'Content-Type': 'application/json',
-        })
+      response=response,
+      headers={'Last-Modified': self.http_timestamp(last_modified)},
+    )
+    resp_models, collection = self.parse_response(response=response)
     self.assertIn('test_model_collection', response.json)
-    self.assertEqual(2, len(response.json['test_model_collection']))
-    self.assertIn('selfLink', response.json['test_model_collection'])
-    self.assertIn('test_model', response.json['test_model_collection'])
-    collection = response.json['test_model_collection']['test_model']
     self.assertEqual(2, len(collection))
-    self.assertDictEqual(mock2, collection[0])
-    self.assertDictEqual(mock1, collection[1])
+    self.assertIn('selfLink', collection)
+    self.assertIn('test_model', collection)
+    self.assertEqual(2, len(resp_models))
+    self.assertDictEqual(models[1], resp_models[0])
+    self.assertDictEqual(models[0], resp_models[1])
+
+  def test_collection_get_pagination(self):
+    """Test collection GET method with pagination"""
+    self.mock_models(count=4)
+    response = self.client.get(self.mock_url(page=1, page_size=2),
+                               headers=self.headers())
+    resp_models, collection = self.parse_response(response=response)
+    self.assertEqual(2, len(resp_models))
+    self.assertIn('paging', collection)
+
+    paging = collection['paging']
+    self.assertKeysIn(('total', 'count', 'first', 'next', 'last'), paging)
+    self.assertEqual(2, paging['count'])
+    self.assertEqual(4, paging['total'])
+
+  def test_collection_get_pagination_default_page_size(self):
+    """Test collection GET method with pagination (default page size)"""
+    self.mock_models(count=30)
+    response = self.client.get(self.mock_url(page=1),
+                               headers=self.headers())
+    resp_models, collection = self.parse_response(response=response)
+    self.assertEqual(Resource.DEFAULT_PAGE_SIZE, len(resp_models))
+    self.assertIn('paging', collection)
+
+    paging = collection['paging']
+    self.assertKeysIn(('total', 'count', 'first', 'next', 'last'), paging)
+    self.assertEqual(2, paging['count'])
+    self.assertEqual(30, paging['total'])
+
+  def test_collection_get_sorting_single_attr(self):
+    """Test collection GET method with sorting of a single attribute"""
+    self.mock_models(count=3)
+    response = self.client.get(self.mock_url(sort='updated_at'),
+                               headers=self.headers())
+    resp_models, _ = self.parse_response(response=response)
+
+    expected = ['2013-04-0%sT00:00:00' % (i + 1) for i in range(3)]
+    for model, expected in zip(resp_models, expected):
+      self.assertEqual(model['updated_at'], expected)
+
+  def test_collection_get_sorting_single_attr_asc(self):
+    """Test collection GET method with sorting of a single attribute
+    ascending"""
+    self.mock_models(count=3)
+    response = self.client.get(self.mock_url(sort='updated_at',
+                                             sort_desc=False),
+                               headers=self.headers())
+    resp_models, _ = self.parse_response(response=response)
+
+    expected = ['2013-04-0%sT00:00:00' % (i + 1) for i in range(3)]
+    for model, expected in zip(resp_models, expected):
+      self.assertEqual(model['updated_at'], expected)
+
+  def test_collection_get_sorting_single_attr_desc(self):
+    """Test collection GET method with sorting of a single attribute
+    descending"""
+    self.mock_models(count=3)
+    response = self.client.get(self.mock_url(sort='updated_at',
+                                             sort_desc=True),
+                               headers=self.headers())
+    resp_models, _ = self.parse_response(response=response)
+
+    expected = ['2013-04-0%sT00:00:00' % (i + 1) for i in range(3)]
+    for model, expected in zip(resp_models, reversed(expected)):
+      self.assertEqual(model['updated_at'], expected)
+
+  def test_collection_get_sorting_multiple_attr(self):
+    """Test collection GET method with sorting of multiple attributes"""
+    # create models twice so we have same updated_at for some models
+    self.mock_models(count=3)
+    self.mock_models(count=3)
+
+    response = self.client.get(self.mock_url(sort='updated_at,id'))
+    resp_models, _ = self.parse_response(response=response)
+
+    for model, expected in zip(resp_models, (('2013-04-01T00:00:00', 1),
+                                             ('2013-04-01T00:00:00', 4),
+                                             ('2013-04-02T00:00:00', 2),
+                                             ('2013-04-02T00:00:00', 5),
+                                             ('2013-04-03T00:00:00', 3),
+                                             ('2013-04-03T00:00:00', 6))):
+      self.assertEqual((model['updated_at'], model['id']), expected)
+
+  def test_collection_get_sorting_multiple_attr_mixed_dir(self):
+    """Test collection GET method with sorting of multiple attributes with
+    mixed sort direction (ascending/descending)"""
+    # create models twice so we have same updated_at for some models
+    self.mock_models(count=3)
+    self.mock_models(count=3)
+
+    response = self.client.get(self.mock_url(sort='updated_at,-id'))
+    resp_models, _ = self.parse_response(response=response)
+
+    for model, expected in zip(resp_models, (('2013-04-01T00:00:00', 4),
+                                             ('2013-04-01T00:00:00', 1),
+                                             ('2013-04-02T00:00:00', 5),
+                                             ('2013-04-02T00:00:00', 2),
+                                             ('2013-04-03T00:00:00', 6),
+                                             ('2013-04-03T00:00:00', 3))):
+      self.assertEqual((model['updated_at'], model['id']), expected)
 
   def test_resource_get(self):
     """Test resource GET method from common.py"""
-    date1 = datetime(2013, 4, 17, 0, 0, 0, 0)
-    mock1 = self.mock_model(created_at=date1, updated_at=date1).to_json()
-    response = self.client.get(self.mock_url(mock1['id']), headers=self.headers())
+    date = datetime(2013, 4, 1, 0, 0, 0, 0)
+    models = self.mock_models(count=1, to_json=True)
+    response = self.client.get(self.mock_url(models[0]['id']),
+                               headers=self.headers())
     self.assert200(response)
     self.assertRequiredHeaders(
-        response,
-        {
-            'Last-Modified': self.http_timestamp(date1),
-            'Content-Type': 'application/json',
-        })
+      response=response,
+      headers={'Last-Modified': self.http_timestamp(date)},
+    )
     self.assertIn('services_test_mock_model', response.json)
-    self.assertDictEqual(mock1, response.json['services_test_mock_model'])
+    self.assertDictEqual(models[0], response.json['services_test_mock_model'])
 
   def test_collection_put(self):
     self.assertAllow(
@@ -215,8 +350,7 @@ class TestResource(TestCase):
     response = self.client.get(
         self.get_location(response), headers=self.headers())
     self.assert200(response)
-    self.assertIn('Content-Type', response.headers)
-    self.assertEqual('application/json', response.headers['Content-Type'])
+    self.assertRequiredHeaders(response)
     self.assertIn('services_test_mock_model', response.json)
     self.assertIn('foo', response.json['services_test_mock_model'])
     self.assertEqual('bar', response.json['services_test_mock_model']['foo'])
