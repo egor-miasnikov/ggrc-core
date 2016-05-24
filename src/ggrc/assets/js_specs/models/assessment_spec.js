@@ -9,14 +9,14 @@ describe('can.Model.Assessment', function () {
   'use strict';
 
   var Assessment;
-  
+
   beforeAll(function () {
     Assessment = CMS.Models.Assessment;
   });
 
   describe('_generate_pagination_request_params() method', function () {
-
     var defaultRequestObject;
+
     beforeEach(function () {
       defaultRequestObject = {
         __page: 1,
@@ -64,16 +64,87 @@ describe('can.Model.Assessment', function () {
   });
 
   describe('findAll() method', function () {
+    beforeAll(function(){
+      GGRC.page_instance = function(){
+        return {
+          type: "Person"
+        }
+      };
+    });
+
+    afterAll(function () {
+      GGRC.page_instance = undefined;
+    });
 
     it("makes a call on backend with specific url", function() {
       spyOn($, 'ajax').and.callFake(function (req) {
         var deffered = $.Deferred();
         expect(req.url).toEqual('/api/assessments');
+        expect(req.data).toEqual({});
         deffered.resolve({});
         return deffered.promise();
       });
 
       Assessment.findAll({});
+    });
+    it("makes a call on backend with specific url if we're on Audit", function() {
+      spyOn($, 'ajax').and.callFake(function (req) {
+        var deffered = $.Deferred();
+        expect(req.url).toEqual('/api/assessments');
+        expect(req.data).toEqual({id__in:'1,2,3'});
+        deffered.resolve({});
+        return deffered.promise();
+      });
+
+      Assessment.findAll({id__in:'1,2,3'});
+    });
+
+    describe('for Audit page', function(){
+      beforeAll(function(){
+        GGRC.page_instance = function(){
+          return {
+            type: "Audit"
+          }
+        };
+      });
+      it("makes a call on backend with specific url if we're on Audit", function() {
+
+        spyOn($, 'ajax').and.callFake(function (req) {
+          var deffered = $.Deferred();
+          expect(req.url).toEqual('/api/assessments');
+          expect(req.data).toEqual({ __page: 1, __page_size: 5, __search: '', __sort: 'title|description_inline|name|email', __sort_desc: false });
+          deffered.resolve({});
+          return deffered.promise();
+        });
+
+        Assessment.findAll({});
+      });
+
+      it("makes a call on backend with specific url if we're on Audit", function() {
+
+        spyOn($, 'ajax').and.callFake(function (req) {
+          var deffered = $.Deferred();
+          expect(req.url).toEqual('/api/assessments');
+          expect(req.data).toEqual({ __page: 3, __page_size: 5, __search: '', __sort: 'title|description_inline|name|email', __sort_desc: false });
+          deffered.resolve({});
+          return deffered.promise();
+        });
+
+        Assessment.findAll({page: 3});
+      });
+
+      it("makes a call on backend with specific url if we're on Audit", function() {
+
+        spyOn($, 'ajax').and.callFake(function (req) {
+          var deffered = $.Deferred();
+          expect(req.url).toEqual('/api/assessments');
+          expect(req.data).toEqual({ __page: 10, __page_size: 10, __search: 'verified', __sort: 'status', __sort_desc: true });
+          deffered.resolve({});
+          return deffered.promise();
+        });
+
+        Assessment.findAll({page: 10, page_size: 10, search_value: 'verified', sort_value: 'status', sort_desc: true});
+      });
     });
   });
 });
