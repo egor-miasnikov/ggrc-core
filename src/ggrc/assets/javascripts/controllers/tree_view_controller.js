@@ -411,7 +411,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     filter: null,
     paging: {
       current: 1,
-      total: 100,
+      total: null,
       page_size: 10,
       count: null
     },
