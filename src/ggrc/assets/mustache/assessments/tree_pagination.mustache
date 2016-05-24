@@ -1,10 +1,49 @@
 {{!
     Copyright (C) 2015 Google Inc., authors, and contributors <see AUTHORS file>
     Licensed under http://www.apache.org/licenses/LICENSE-2.0 <see LICENSE file>
-    Created By: anze@reciprocitylabs.com
-    Maintained By: anze@reciprocitylabs.com
+    Created By: Aliaksandr_Novik3@epam.com
+    Maintained By: Aliaksandr_Novik3@epam.com
 }}
 
-<footer style="margin: 0 16px" class="pull-right">
-    <tree-view-pagination count="page_count"/>
-</footer>
+<div class="ggrc-pagination">
+    <div class="count">
+        <div class="dropdown count">
+            <h6 class="dropdown-toggle" data-toggle="dropdown">{{page_info paging.current paging.page_size paging.total}}</h6>
+            <div class="dropdown-menu">
+                <span>Items per page:</span>
+                <div class="btn-group">
+                    <button class="btn {{#if_equals paging.page_size 10}}active{{/if_equals}}" data-size="10">10</button>
+                    <button class="btn {{#if_equals paging.page_size 25}}active{{/if_equals}}" data-size="25">25</button>
+                    <button class="btn {{#if_equals paging.page_size 50}}active{{/if_equals}}" data-size="50">50</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <ul class="pagination pull-right">
+        <li>
+            <a href="javascript://" data-page="{{math paging.current "-" 10}}">
+                <i class="fa fa-angle-double-left" aria-hidden="true"></i>
+            </a>
+        </li>
+        <li>
+            <a href="javascript://" data-page="{{math paging.current "-" 1}}">
+                <i class="fa fa-angle-left" aria-hidden="true"></i>
+            </a>
+        </li>
+        <li>
+            <input type="text" class="input" value="{{paging.current}}">
+        </li>
+        <li>
+            <a href="javascript://" data-page="{{math paging.current "+" 1}}">
+                <i class="fa fa-angle-right" aria-hidden="true"></i>
+            </a>
+        </li>
+        <li>
+            <a href="javascript://" data-page="{{math paging.current "+" 10}}">
+                <i class="fa fa-angle-double-right" aria-hidden="true"></i>
+            </a>
+        </li>
+    </ul>
+    <div class="clearfix"></div>
+</div>
+

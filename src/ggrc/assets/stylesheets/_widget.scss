@@ -77,8 +77,13 @@
   .ggrc-pagination {
     .count {
       display: inline-block;
-      width: 120px;
-      vertical-align: top;
+      width: 170px;
+      margin-right: 20px;
+      button {
+        line-height: 26px;
+        padding-top: 0;
+        padding-bottom: 0;
+      }
       h6 {
         font-weight: normal;
         text-transform: none;
@@ -89,6 +94,8 @@
     }
     .dropdown-menu {
       padding: 10px;
+      line-height: 39px;
+      min-width: 140px;
       .btn-group {
         .btn {
           color: black;
@@ -98,7 +105,7 @@
           background: white;
           border-radius: 0;
           &.active {
-            background: #a5a5a5;
+            background: $lightGray;
           }
         }
       }
@@ -120,7 +127,7 @@
           border: 1px solid #a5a5a5;
           border-left-width: 0;
           line-height: 24px;
-          background: #eee;
+          background: $white;
           padding: 0 10px;
           &:hover {
             color: #999;
