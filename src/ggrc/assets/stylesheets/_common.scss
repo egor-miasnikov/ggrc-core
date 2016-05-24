@@ -445,7 +445,6 @@ select.multiple-selector {
 // Sticky headers
 .sticky-header {
   @extend %sticky;
-  z-index: zIndex(sticky);
   border-top: none !important;
 }
 
