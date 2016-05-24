@@ -319,10 +319,10 @@ class TestResource(TestCase):
       self.assertEqual((model['updated_at'], model['id']), expected)
 
   def test_collection_get_search(self):
-    """Test collection GET method from common.py with __search parameter."""
+    """Test collection GET method from common.py with __search parameter"""
 
     def make_mock_index(mock_model, property_list):
-      """Adds index records for listed properties of mock_model."""
+      """Add index records for listed properties of mock_model"""
       from ggrc.fulltext import get_indexer
       indexer = get_indexer()
       for prop in property_list:
