@@ -175,7 +175,8 @@ can.Control('CMS.Controllers.TreeLoader', {
 
     this._display_deferred = this._display_deferred.then(this._ifNotRemoved(function () {
       return $.when(that.fetch_list(), that.init_view())
-        .then(that._ifNotRemoved(that.proxy('draw_list')));
+        .then(that._ifNotRemoved(that.proxy('draw_list')))
+        .then(that.save_paging_info.bind(that));
     })).done(tracker_stop);
 
     this._display_deferred.then(function (e) {
@@ -1404,7 +1405,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
 
   to_page: function (event) {
     var page = event.currentTarget.dataset.page;
-    if(page > 1) {
+    if(page >= 1 && page <= this.options.paging.count) {
       this.options.paging.attr("current", page);
     } else {
       return;
@@ -1412,10 +1413,20 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     this.find();
   },
 
+  save_paging_info: function () {
+    var page_object = GGRC.page_object;
+
+    if(page_object.paging && page_object.paging[this.options.model.shortName]) {
+      this.options.paging.attr('count', page_object.paging[this.options.model.shortName].count);
+      this.options.paging.attr('total', page_object.paging[this.options.model.shortName].total);
+    }
+  },
+
   set_page_size: function (event) {
     var $el = $(event.currentTarget);
     var page_size = $el.data('size');
     this.options.paging.attr("page_size", page_size);
+    this.options.paging.attr("current", 1);
     this.find();
   },
 
@@ -1424,18 +1435,19 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
 
     this.options.model.findAll(self._build_request_params())
       .then(function (data) {
-      var real_add = [];
-      self.element.children('.cms_controllers_tree_view_node').remove();
-      can.each(data, function (newVal) {
-        var _newVal = newVal.instance ? newVal.instance : newVal;
-        if (self.oldList && ~can.inArray(_newVal, self.oldList)) {
-          self.oldList.splice(can.inArray(_newVal, self.oldList), 1);
-        } else if (self.element) {
-          real_add.push(newVal);
-        }
+        var real_add = [];
+        self.save_paging_info();
+        self.element.children('.cms_controllers_tree_view_node').remove();
+        can.each(data, function (newVal) {
+          var _newVal = newVal.instance ? newVal.instance : newVal;
+          if (self.oldList && ~can.inArray(_newVal, self.oldList)) {
+            self.oldList.splice(can.inArray(_newVal, self.oldList), 1);
+          } else if (self.element) {
+            real_add.push(newVal);
+          }
+        });
+        self.enqueue_items(real_add);
       });
-      self.enqueue_items(real_add);
-    });
   },
 
   sort: function (event) {
