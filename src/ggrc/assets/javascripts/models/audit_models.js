@@ -882,13 +882,21 @@
       );
     },
     _generate_pagination_request_params: function (params) {
-      return {
+      var query_object = {
         __page: params.page || 1,
         __page_size: params.page_size || 10,
-        __search: params.search_value || '',
-        __sort: params.sort_value || 'title|description_inline|name|email',
-        __sort_desc: params.sort_desc || false
+        __sort: params.sort_value || 'title,description_inline,name,email'
       };
+
+      if(params.sort_desc !== undefined){
+        query_object.__sort_desc = params.sort_desc;
+      }
+
+      if(params.search_value !== undefined){
+        query_object.__search = params.search_value;
+      }
+
+      return query_object;
     }
   }, {
     form_preload: function (newObjectForm) {

@@ -1399,7 +1399,8 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
   _build_request_params: function () {
     return {
       page: this.options.paging.attr("current"),
-      page_size: this.options.paging.attr("page_size")
+      page_size: this.options.paging.attr("page_size"),
+      search_value: this.options.paging.attr("filter")
     }
   },
 

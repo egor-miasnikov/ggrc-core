@@ -66,7 +66,8 @@ describe('CMS.Controllers.TreeView', function () {
     it('return default params for paging request', function () {
       var expected = {
         page: 1,
-        page_size: 10
+        page_size: 10,
+        search_value: undefined
       };
 
       expect(method()).toEqual(expected);
@@ -75,7 +76,8 @@ describe('CMS.Controllers.TreeView', function () {
     it('return params for paging request', function () {
       var expected = {
         page: 5,
-        page_size: 25
+        page_size: 25,
+        search_value: undefined
       };
 
       ctrlInst.options.paging.attr('current', 5);
