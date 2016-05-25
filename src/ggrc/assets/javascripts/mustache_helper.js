@@ -3422,13 +3422,13 @@ Mustache.registerHelper("page_info", function (current, page_size, total, option
   var first_visible = (current - 1) * page_size + 1
     , last_visible = current * page_size;
 
-  return first_visible + '-' + last_visible + ' items of ' + total + ' total';
+  return first_visible + '-' + last_visible + ' of ' + total + ' items';
 });
 
 Mustache.registerHelper("page_placeholder", function (current, count, options) {
   current = parseFloat(Mustache.resolve(current));
   count = parseFloat(Mustache.resolve(count));
 
-  return current + ' of ' + count + ' pages';
+  return 'Page ' + current + ' of ' + count;
 });
 })(this, jQuery, can);

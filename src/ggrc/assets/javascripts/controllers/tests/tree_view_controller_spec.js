@@ -88,6 +88,44 @@ describe('CMS.Controllers.TreeView', function () {
     });
   });
 
+  describe('save_paging_info() method', function () {
+
+    var ctrlInst;  // fake controller instance
+    var method;
+
+    beforeAll(function () {
+      GGRC.page_object = {
+        paging: {
+          Assessments: {
+            count: 20,
+            total: 160
+          }
+        }
+      };
+
+      ctrlInst = {
+        options: new can.Map({
+          model: {
+            shortName: 'Assessments'
+          },
+          paging: {
+            count: null,
+            total: null
+          }
+        })
+      };
+
+      method = Ctrl.prototype.save_paging_info.bind(ctrlInst);
+    });
+
+    it('check save_paging_info()', function () {
+
+      method();
+      expect(ctrlInst.options.paging.count).toEqual(20);
+      expect(ctrlInst.options.paging.total).toEqual(160);
+    });
+  });
+
   describe('find() method', function () {
     var ctrlInst;  // fake controller instance
     var method;
@@ -100,6 +138,7 @@ describe('CMS.Controllers.TreeView', function () {
       ctrlInst = {
         element: $element,
         _build_request_params: jasmine.createSpy('_build_request_params'),
+        save_paging_info: jasmine.createSpy('save_paging_info'),
         enqueue_items: jasmine.createSpy('enqueue_items'),
         options: new can.Map({
           model: {

@@ -20,12 +20,12 @@
         </div>
     </div>
     <ul class="pagination pull-right">
-        <li>
+        <li class="{{#if_equals paging.current 1}}disabled{{/if_equals}}">
             <a href="javascript://" data-page="1">
                 <i class="fa fa-angle-double-left" aria-hidden="true"></i>
             </a>
         </li>
-        <li>
+        <li class="{{#if_equals paging.current 1}}disabled{{/if_equals}}">
             <a href="javascript://" data-page="{{math paging.current "-" 1}}">
                 <i class="fa fa-angle-left" aria-hidden="true"></i>
             </a>
@@ -33,12 +33,12 @@
         <li>
             <input type="text" class="input" placeholder="{{page_placeholder paging.current paging.count}}">
         </li>
-        <li>
+        <li class="{{#if_equals paging.current paging.count}}disabled{{/if_equals}}">
             <a href="javascript://" data-page="{{math paging.current "+" 1}}">
                 <i class="fa fa-angle-right" aria-hidden="true"></i>
             </a>
         </li>
-        <li>
+        <li class="{{#if_equals paging.current paging.count}}disabled{{/if_equals}}">
             <a href="javascript://" data-page="{{paging.count}}">
                 <i class="fa fa-angle-double-right" aria-hidden="true"></i>
             </a>
