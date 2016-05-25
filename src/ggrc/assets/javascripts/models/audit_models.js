@@ -884,7 +884,7 @@
     _generate_pagination_request_params: function (params) {
       return {
         __page: params.page || 1,
-        __page_size: params.page_size || 5,
+        __page_size: params.page_size || 10,
         __search: params.search_value || '',
         __sort: params.sort_value || 'title|description_inline|name|email',
         __sort_desc: params.sort_desc || false
