@@ -14,6 +14,9 @@ import json
 import time
 from datetime import datetime
 from ggrc import db
+from ggrc.fulltext import get_indexer
+from ggrc.fulltext.recordbuilder import fts_record_for
+from ggrc.models.all_models import register_model
 from ggrc.models.mixins import Base
 from ggrc.services.common import Resource
 from integration.ggrc import TestCase
@@ -25,11 +28,13 @@ from nose.plugins.skip import SkipTest
 class ServicesTestMockModel(Base, ggrc.db.Model):
   __tablename__ = 'test_model'
   foo = db.Column(db.String)
+  title = db.Column(db.String)
   code = db.Column(db.String, unique=True)
 
   # REST properties
-  _publish_attrs = ['modified_by_id', 'foo', 'code']
-  _update_attrs = ['foo', 'code']
+  _publish_attrs = ['modified_by_id', 'foo', 'code', 'title']
+  _update_attrs = ['foo', 'code', 'title']
+  _fulltext_attrs = ['foo', 'title']
 
   def to_json(self):
     date_format = '%Y-%m-%dT%H:%M:%S'
@@ -52,6 +57,7 @@ class ServicesTestMockModel(Base, ggrc.db.Model):
         u'context': {u'id': self.context_id}
             if self.context_id is not None else None,
         u'foo': (unicode(self.foo) if self.foo else None),
+        u'title': (unicode(self.title) if self.title else None),
         u'code': (unicode(self.code) if self.code else None),
     }
 
@@ -86,20 +92,22 @@ class TestResource(TestCase):
       ServicesTestMockModel.__table__.drop(db.engine)
 
   @staticmethod
-  def mock_url(resource=None, page=None, page_size=None, sort=None,
-               sort_desc=None):
+  def mock_url(resource=None, **parameters):
+    """Make a mock url for `resource` with double-underscored `parameters`
+
+    Example:
+      url = mock_url(resource='my_class', sort='id', search='test')
+      # URL_MOCK_RESOURCE.format(resource) + '?__sort=id&__search=test'
+      url = mock_url(page=2, page_size=14, sort='date')
+      # URL_MOCK_COLLECTION + '?__page=2&__page_size=14&sort=date'
+    """
     if resource is not None:
       return URL_MOCK_RESOURCE.format(resource)
 
     params = []
-    if page is not None:
-      params.append('__page=%s' % page)
-    if page_size is not None:
-      params.append('__page_size=%s' % page_size)
-    if sort is not None:
-      params.append('__sort=%s' % sort)
-    if sort_desc is not None:
-      params.append('__sort_desc=%s' % 'true' if sort_desc else 'false')
+    for parameter, value in parameters.iteritems():
+      params.append('__{parameter}={value}'.format(parameter=parameter,
+                                                   value=value))
 
     return ('?'.join([URL_MOCK_COLLECTION, '&'.join(params)])
             if params else URL_MOCK_COLLECTION)
@@ -314,6 +322,99 @@ class TestResource(TestCase):
                                              ('2013-04-03T00:00:00', 6),
                                              ('2013-04-03T00:00:00', 3))):
       self.assertEqual((model['updated_at'], model['id']), expected)
+
+  def test_collection_get_search(self):
+    """Test collection GET method from common.py with __search parameter"""
+
+    def make_mock_index(mock_model, property_list):
+      """Add index records for listed properties of mock_model"""
+      indexer = get_indexer()
+      for prop in property_list:
+        index_record = indexer.record_type(
+          key=mock_model.id,
+          type=mock_model.__class__.__name__,
+          property=prop,
+          content=getattr(mock_model, prop),
+        )
+        ggrc.db.session.add(index_record)
+      ggrc.db.session.commit()
+
+    register_model(ServicesTestMockModel)
+
+    mock_model1 = self.mock_model(title='foo')
+    mock_model2 = self.mock_model(title='bar')
+    make_mock_index(mock_model1, ['title'])
+    make_mock_index(mock_model2, ['title'])
+    mock1 = mock_model1.to_json()
+    mock2 = mock_model2.to_json()
+
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='foo'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([mock1], resp_models)
+
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='baz'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([], resp_models)
+
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='title=foo'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([mock1], resp_models)
+
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='title=baz'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([], resp_models)
+
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='title!=foo'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([mock2], resp_models)
+
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='title!=baz'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual(sorted([mock1, mock2], key=lambda model: model['id']),
+                         sorted(resp_models, key=lambda model: model['id']))
+
+  def test_collection_get_search_on_real_index(self):
+    """Test collection GET method from common.py `__search`ing on real index"""
+    mock_model1 = self.mock_model(foo='foo_value_1', title='title_value_1')
+    mock_model2 = self.mock_model(foo='foo_value_2', title='title_value_2')
+    mock1 = mock_model1.to_json()
+    mock2 = mock_model2.to_json()
+    indexer = get_indexer()
+    indexer.create_record(fts_record_for(mock_model1))
+    indexer.create_record(fts_record_for(mock_model2))
+
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='foo=foo_value_1'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([mock1], resp_models)
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='title=title_value_1'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([mock1], resp_models)
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='foo=foo_value_2'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([mock2], resp_models)
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='title=title_value_2'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([mock2], resp_models)
 
   def test_resource_get(self):
     """Test resource GET method from common.py"""
