@@ -101,8 +101,8 @@
           color: black;
           font-size: 14px;
           font-weight: normal;
-          border: 1px solid #a5a5a5;
-          background: white;
+          border: 1px solid $widgetBorder;
+          background: $white;
           border-radius: 0;
           &.active {
             background: $lightGray;
@@ -123,8 +123,8 @@
           }
         }
         a {
-          color: #000;
-          border: 1px solid #a5a5a5;
+          color: $black;
+          border: 1px solid $widgetBorder;
           border-left-width: 0;
           line-height: 24px;
           background: $white;
@@ -138,9 +138,9 @@
           border-radius: 0;
           height: 16px;
           margin-bottom:0;
-          background-color: #fff;
-          border-top: 1px solid #a5a5a5;
-          border-bottom: 1px solid #a5a5a5;
+          background-color: $white;
+          border-top: 1px solid $widgetBorder;
+          border-bottom: 1px solid $widgetBorder;
           border-left-width: 0;
           width:40px;
           float:left;
