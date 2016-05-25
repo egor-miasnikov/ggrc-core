@@ -382,8 +382,8 @@ class TestResource(TestCase):
       self.mock_url(search='title!=baz'),
       headers=self.headers(),
     ))
-    self.assertListEqual(sorted([mock1, mock2], key=lambda json: json['id']),
-                         sorted(resp_models, key=lambda json: json['id']))
+    self.assertListEqual(sorted([mock1, mock2], key=lambda model: model['id']),
+                         sorted(resp_models, key=lambda model: model['id']))
 
   def test_collection_get_search_on_real_index(self):
     """Test collection GET method from common.py `__search`ing on real index"""
