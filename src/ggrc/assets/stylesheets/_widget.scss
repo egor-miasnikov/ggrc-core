@@ -98,7 +98,7 @@
       min-width: 140px;
       .btn-group {
         .btn {
-          color: black;
+          color: $black;
           font-size: 14px;
           font-weight: normal;
           border: 1px solid $widgetBorder;
@@ -130,7 +130,7 @@
           background: $white;
           padding: 0 10px;
           &:hover {
-            color: #999;
+            color: $gray;
           }
         }
         input {

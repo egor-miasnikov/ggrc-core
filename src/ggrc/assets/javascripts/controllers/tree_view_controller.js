@@ -413,7 +413,8 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
       current: 1,
       total: null,
       page_size: 10,
-      count: null
+      count: null,
+      page_size_select: [10, 25, 50]
     },
     start_expanded: false, // true
     draw_children: true,

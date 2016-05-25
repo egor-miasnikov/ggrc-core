@@ -12,16 +12,16 @@
             <div class="dropdown-menu">
                 <span>Items per page:</span>
                 <div class="btn-group">
-                    <button class="btn {{#if_equals paging.page_size 10}}active{{/if_equals}}" data-size="10">10</button>
-                    <button class="btn {{#if_equals paging.page_size 25}}active{{/if_equals}}" data-size="25">25</button>
-                    <button class="btn {{#if_equals paging.page_size 50}}active{{/if_equals}}" data-size="50">50</button>
+                    {{#paging.page_size_select}}
+                        <button class="btn {{#if_equals paging.page_size .}}active{{/if_equals}}" data-size="{{.}}">{{.}}</button>
+                    {{/paging.page_size_select}}
                 </div>
             </div>
         </div>
     </div>
     <ul class="pagination pull-right">
         <li>
-            <a href="javascript://" data-page="{{math paging.current "-" 10}}">
+            <a href="javascript://" data-page="1">
                 <i class="fa fa-angle-double-left" aria-hidden="true"></i>
             </a>
         </li>
@@ -39,7 +39,7 @@
             </a>
         </li>
         <li>
-            <a href="javascript://" data-page="{{math paging.current "+" 10}}">
+            <a href="javascript://" data-page="{{paging.count}}">
                 <i class="fa fa-angle-double-right" aria-hidden="true"></i>
             </a>
         </li>
