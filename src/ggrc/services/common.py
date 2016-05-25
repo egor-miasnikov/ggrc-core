@@ -354,6 +354,20 @@ def clear_permission_cache():
   cache.delete_multi(cached_keys_set)
 
 
+def _check_accept_header(func):
+  """Check the 'Accept' header and return 406 response if not present."""
+  @functools.wraps(func)
+  def wrapped(self, *args, **kwargs):  # pylint: disable=missing-docstring
+    if ('Accept' in self.request.headers and
+            'application/json' not in self.request.headers['Accept']):
+      return current_app.make_response(
+        ('application/json', 406, [('Content-Type', 'text/plain')])
+      )
+    return func(self, *args, **kwargs)
+
+  return wrapped
+
+
 class ModelView(View):
   DEFAULT_PAGE_SIZE = 20
   MAX_PAGE_SIZE = 100
@@ -691,18 +705,6 @@ class Resource(ModelView):
         :obj: The model instance removed.
         :service: The instance of Resource handling the DELETE request.
       """,)
-
-  def _check_accept_header(func):  #pylint: disable=no-self-argument
-    """Check the 'Accept' header and return 406 response if not present."""
-    @functools.wraps(func)
-    def wrapped(self, *args, **kwargs):  # pylint: disable=missing-docstring
-      if ('Accept' in self.request.headers and
-              'application/json' not in self.request.headers['Accept']):
-        return current_app.make_response(
-            ('application/json', 406, [('Content-Type', 'text/plain')])
-        )
-      return func(self, *args, **kwargs)
-    return wrapped
 
   def dispatch_request(self, *args, **kwargs):  # noqa
     with benchmark("Dispatch request"):

@@ -111,15 +111,18 @@ class TestResource(TestCase):
     ggrc.db.session.commit()
     return mock
 
-  def mock_models(self, count=1, to_json=False):
+  def mock_models(self, count=1):
     """Mock models of a given count."""
-    items = []
+    mocks = []
+    mocks_json = []
+
     for i in xrange(count):
       date = datetime(2013, 4, 1 + i, 0, 0, 0, 0)
       item = self.mock_model(created_at=date, updated_at=date)
-      items.append(item.to_json() if to_json else item)
+      mocks.append(item)
+      mocks_json.append(item.to_json())
 
-    return items
+    return mocks, mocks_json
 
   @staticmethod
   def http_timestamp(timestamp):
@@ -187,7 +190,6 @@ class TestResource(TestCase):
 
   def test_collection_get(self):
     """Test collection GET method from common.py"""
-    last_modified = datetime(2013, 4, 2, 0, 0, 0, 0)
 
     # Note: Flask-SQLAlchemy also removes the session instance at the end of
     # every request. Therefore the session is cleared along with any objects
@@ -195,7 +197,8 @@ class TestResource(TestCase):
     # In order to get rid of DetachedInstance error we need to generate JSON
     # representation before making a request or re-add the object instance
     # back to the session with db.session.add(mock)
-    models = self.mock_models(count=2, to_json=True)
+    models, models_json = self.mock_models(count=2)
+    last_modified = max(model.updated_at for model in models)
 
     response = self.client.get(self.mock_url(), headers=self.headers())
     self.assert200(response)
@@ -209,8 +212,8 @@ class TestResource(TestCase):
     self.assertIn('selfLink', collection)
     self.assertIn('test_model', collection)
     self.assertEqual(2, len(resp_models))
-    self.assertDictEqual(models[1], resp_models[0])
-    self.assertDictEqual(models[0], resp_models[1])
+    self.assertDictEqual(models_json[1], resp_models[0])
+    self.assertDictEqual(models_json[0], resp_models[1])
 
   def test_collection_get_pagination(self):
     """Test collection GET method with pagination"""
@@ -314,17 +317,17 @@ class TestResource(TestCase):
 
   def test_resource_get(self):
     """Test resource GET method from common.py"""
-    date = datetime(2013, 4, 1, 0, 0, 0, 0)
-    models = self.mock_models(count=1, to_json=True)
-    response = self.client.get(self.mock_url(models[0]['id']),
+    models, models_json = self.mock_models(count=1)
+    last_modified = max(model.updated_at for model in models)
+    response = self.client.get(self.mock_url(models[0].id),
                                headers=self.headers())
     self.assert200(response)
     self.assertRequiredHeaders(
       response=response,
-      headers={'Last-Modified': self.http_timestamp(date)},
+      headers={'Last-Modified': self.http_timestamp(last_modified)},
     )
     self.assertIn('services_test_mock_model', response.json)
-    self.assertDictEqual(models[0], response.json['services_test_mock_model'])
+    self.assertDictEqual(models_json[0], response.json['services_test_mock_model'])
 
   def test_collection_put(self):
     self.assertAllow(
