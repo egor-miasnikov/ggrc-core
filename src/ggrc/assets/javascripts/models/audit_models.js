@@ -716,8 +716,8 @@
     root_collection: 'assessments',
     findOne: 'GET /api/assessments/{id}',
     findAll: function (params) {
-      var url = '/api/assessments';
-      var page_instance = GGRC.page_instance();
+      var url = '/api/assessments'
+        , page_instance = GGRC.page_instance();
 
       if(page_instance.type === 'Audit' && this.shortName === 'Assessment') {
         params = this._generate_pagination_request_params(params);
