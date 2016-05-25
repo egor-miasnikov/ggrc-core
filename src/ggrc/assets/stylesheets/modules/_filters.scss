@@ -13,7 +13,12 @@
 
 .filter-holder {
   margin-bottom: 25px;
-  overflow: hidden;
+  &:after {
+    overflow: hidden;
+  }
+}
+.filter-stats {
+  display: none;
 }
 
 .inline-filtering {
@@ -40,7 +45,8 @@
     position: relative;
   }
   .filter-title-wrap,
-  .filter-button-wrap {
+  .filter-button-wrap,
+  .filter-pagination-wrap {
     position: absolute;
     top: 0;
   }
@@ -50,14 +56,28 @@
   }
   .filter-input-wrap {
     width: auto;
-    margin-right: 164px;
+    margin-right: 514px;
     margin-left: 45px;
   }
   .filter-button-wrap {
     width: 164px;
-    right: 0;
+    right: 350px;
   }
-  .filter-title {
+  .filter-pagination-wrap {
+    width: 350px;
+    right: 0;
+    padding: 5px 0;
+    .filter-pagination {
+      .pagination {
+        input {
+          height: 26px;
+          margin: 0;
+        }
+      }
+    }
+  }
+  .filter-title,
+  .filter-pagination {
     h6 {
       @extend %oneline;
       font-weight: normal;

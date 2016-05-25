@@ -3400,4 +3400,28 @@ Mustache.registerHelper("un_camel_case", function (str, options) {
   }
   return newval;
 });
+
+Mustache.registerHelper("math", function (lvalue, operator, rvalue, options) {
+  lvalue = parseFloat(Mustache.resolve(lvalue));
+  rvalue = parseFloat(Mustache.resolve(rvalue));
+
+  return {
+    "+": lvalue + rvalue,
+    "-": lvalue - rvalue,
+    "*": lvalue * rvalue,
+    "/": lvalue / rvalue,
+    "%": lvalue % rvalue
+  }[operator];
+});
+
+Mustache.registerHelper("page_info", function (current, page_size, total, options) {
+  current = parseFloat(Mustache.resolve(current));
+  page_size = parseFloat(Mustache.resolve(page_size));
+  total = parseFloat(Mustache.resolve(total));
+
+  var first_visible = (current - 1) * page_size + 1
+    , last_visible = current * page_size;
+
+  return first_visible + '-' + last_visible + ' items of ' + total + ' total';
+});
 })(this, jQuery, can);

@@ -409,6 +409,13 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     sort_function: null,
     sortable: true,
     filter: null,
+    paging: {
+      current: 1,
+      total: null,
+      page_size: 10,
+      count: null,
+      page_size_select: [10, 25, 50]
+    },
     start_expanded: false, // true
     draw_children: true,
     find_function: null,
@@ -734,9 +741,17 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
 
     if (this.options.footer_view) {
       dfds.push(
-        can.view(this.options.footer_view, this.options,
+        can.view(this.options.footer_view, $.when(this.options)).then(
           this._ifNotRemoved(function (frag) {
-            this.element.append(frag);
+            this.element.after(frag);
+            can.bind.call(this.element.parent().find('.pagination a'),
+              'click',
+              this.to_page.bind(this)
+            );
+            can.bind.call(this.element.parent().find('.count button'),
+              'click',
+              this.set_page_size.bind(this)
+            );
           }.bind(this))
         ));
     }
@@ -1378,6 +1393,45 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
                   'click',
                   this.sort.bind(this)
                  );
+  },
+
+  _build_request_params: function () {
+    return {
+      __page: this.options.paging.attr("current"),
+      __page_size: this.options.paging.attr("page_size")
+    }
+  },
+
+  to_page: function (event) {
+    var page = event.currentTarget.dataset.page;
+    this.options.paging.attr("current", page);
+    this.find();
+  },
+
+  set_page_size: function (event) {
+    var $el = $(event.currentTarget);
+    var page_size = $el.data('size');
+    this.options.paging.attr("page_size", page_size);
+    this.find();
+  },
+
+  find: function () {
+    var self = this;
+
+    this.options.model.findAll(self._build_request_params())
+      .then(function (data) {
+      var real_add = [];
+      self.element.children('.cms_controllers_tree_view_node').remove();
+      can.each(data, function (newVal) {
+        var _newVal = newVal.instance ? newVal.instance : newVal;
+        if (self.oldList && ~can.inArray(_newVal, self.oldList)) {
+          self.oldList.splice(can.inArray(_newVal, self.oldList), 1);
+        } else if (self.element) {
+          real_add.push(newVal);
+        }
+      });
+      self.enqueue_items(real_add);
+    });
   },
 
   sort: function (event) {
