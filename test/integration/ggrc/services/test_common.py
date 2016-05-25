@@ -90,7 +90,7 @@ class TestResource(TestCase):
 
   @staticmethod
   def mock_url(resource=None, page=None, page_size=None, sort=None,
-               sort_desc=None):
+               sort_desc=None, search=None):
     if resource is not None:
       return URL_MOCK_RESOURCE.format(resource)
 
@@ -103,6 +103,8 @@ class TestResource(TestCase):
       params.append('__sort=%s' % sort)
     if sort_desc is not None:
       params.append('__sort_desc=%s' % 'true' if sort_desc else 'false')
+    if search is not None:
+      params.append('__search=%s' % search)
 
     return ('?'.join([URL_MOCK_COLLECTION, '&'.join(params)])
             if params else URL_MOCK_COLLECTION)
@@ -335,9 +337,6 @@ class TestResource(TestCase):
         ggrc.db.session.add(index_record)
       ggrc.db.session.commit()
 
-    def mock_search_url(query):
-      return self.mock_url() + '?__search={}'.format(query)
-
     register_model(ServicesTestMockModel)
 
     mock_model1 = self.mock_model(title='foo')
@@ -347,36 +346,42 @@ class TestResource(TestCase):
     mock1 = mock_model1.to_json()
     mock2 = mock_model2.to_json()
 
-    response = self.client.get(mock_search_url('foo'),
-                               headers=self.headers())
-    collection = response.json['test_model_collection']['test_model']
-    self.assertListEqual([mock1], collection)
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='foo'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([mock1], resp_models)
 
-    response = self.client.get(mock_search_url('baz'),
-                               headers=self.headers())
-    collection = response.json['test_model_collection']['test_model']
-    self.assertListEqual([], collection)
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='baz'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([], resp_models)
 
-    response = self.client.get(mock_search_url('title=foo'),
-                               headers=self.headers())
-    collection = response.json['test_model_collection']['test_model']
-    self.assertListEqual([mock1], collection)
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='title=foo'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([mock1], resp_models)
 
-    response = self.client.get(mock_search_url('title=baz'),
-                               headers=self.headers())
-    collection = response.json['test_model_collection']['test_model']
-    self.assertListEqual([], collection)
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='title=baz'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([], resp_models)
 
-    response = self.client.get(mock_search_url('title!=foo'),
-                               headers=self.headers())
-    collection = response.json['test_model_collection']['test_model']
-    self.assertListEqual([mock2], collection)
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='title!=foo'),
+      headers=self.headers(),
+    ))
+    self.assertListEqual([mock2], resp_models)
 
-    response = self.client.get(mock_search_url('title!=baz'),
-                               headers=self.headers())
-    collection = response.json['test_model_collection']['test_model']
+    resp_models, _ = self.parse_response(self.client.get(
+      self.mock_url(search='title!=baz'),
+      headers=self.headers(),
+    ))
     self.assertListEqual(sorted([mock1, mock2], key=lambda json: json['id']),
-                         sorted(collection, key=lambda json: json['id']))
+                         sorted(resp_models, key=lambda json: json['id']))
 
   def test_resource_get(self):
     """Test resource GET method from common.py"""
