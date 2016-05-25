@@ -17,6 +17,6 @@ describe('can.mustache.helper.page_info', function () {
   it('return info about visible items on page', function () {
     var result;
     result = helper(15, 10, 3000);
-    expect(result).toEqual("141-150 items of 3000 total");
+    expect(result).toEqual("141-150 of 3000 items");
   });
 });

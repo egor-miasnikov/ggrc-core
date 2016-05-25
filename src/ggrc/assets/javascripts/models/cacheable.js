@@ -175,6 +175,7 @@ can.Model("can.Model.Cacheable", {
         var deferred = $.Deferred()
           , sourceDeferred = finder.call(this, params)
           , self = this
+          , instance = GGRC.page_object
           , tracker_stop = GGRC.Tracker.start("modelize", self.shortName)
           ;
 
@@ -188,6 +189,10 @@ can.Model("can.Model.Cacheable", {
             sourceData = sourceData[self.root_collection + "_collection"];
           }
           if(sourceData[self.root_collection]) {
+            if(sourceData.paging) {
+              instance.paging = instance.paging || {};
+              instance.paging[self.shortName] = sourceData.paging;
+            }
             sourceData = sourceData[self.root_collection];
           }
 
