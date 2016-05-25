@@ -20,7 +20,7 @@ describe('can.Model.Assessment', function () {
     beforeEach(function () {
       default_request_object = {
         __page: 1,
-        __page_size: 5,
+        __page_size: 10,
         __search: '',
         __sort: 'title|description_inline|name|email',
         __sort_desc: false
@@ -52,7 +52,7 @@ describe('can.Model.Assessment', function () {
 
       var expected_request_object = {
         __page: 1,
-        __page_size: 5,
+        __page_size: 10,
         __search: '',
         __sort: 'title|description_inline|name|email',
         __sort_desc: false
@@ -114,7 +114,7 @@ describe('can.Model.Assessment', function () {
           expect(req.url).toEqual('/api/assessments');
           expect(req.data).toEqual({ 
             __page: 1, 
-            __page_size: 5, 
+            __page_size: 10,
             __search: '', 
             __sort: 'title|description_inline|name|email', 
             __sort_desc: false 
@@ -133,7 +133,7 @@ describe('can.Model.Assessment', function () {
           expect(req.url).toEqual('/api/assessments');
           expect(req.data).toEqual({ 
             __page: 3, 
-            __page_size: 5, 
+            __page_size: 10,
             __search: '', 
             __sort: 'title|description_inline|name|email', 
             __sort_desc: false 
