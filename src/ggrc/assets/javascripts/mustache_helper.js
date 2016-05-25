@@ -3424,4 +3424,11 @@ Mustache.registerHelper("page_info", function (current, page_size, total, option
 
   return first_visible + '-' + last_visible + ' items of ' + total + ' total';
 });
+
+Mustache.registerHelper("page_placeholder", function (current, count, options) {
+  current = parseFloat(Mustache.resolve(current));
+  count = parseFloat(Mustache.resolve(count));
+
+  return current + ' of ' + count + ' pages';
+});
 })(this, jQuery, can);

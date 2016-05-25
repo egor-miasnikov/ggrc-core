@@ -1397,14 +1397,18 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
 
   _build_request_params: function () {
     return {
-      __page: this.options.paging.attr("current"),
-      __page_size: this.options.paging.attr("page_size")
+      page: this.options.paging.attr("current"),
+      page_size: this.options.paging.attr("page_size")
     }
   },
 
   to_page: function (event) {
     var page = event.currentTarget.dataset.page;
-    this.options.paging.attr("current", page);
+    if(page > 1) {
+      this.options.paging.attr("current", page);
+    } else {
+      return;
+    }
     this.find();
   },
 
