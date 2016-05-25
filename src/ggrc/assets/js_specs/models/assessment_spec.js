@@ -20,10 +20,8 @@ describe('can.Model.Assessment', function () {
     beforeEach(function () {
       default_request_object = {
         __page: 1,
-        __page_size: 5,
-        __search: '',
-        __sort: 'title|description_inline|name|email',
-        __sort_desc: false
+        __page_size: 10,
+        __sort: 'title,description_inline,name,email'
       };
     });
 
@@ -37,9 +35,7 @@ describe('can.Model.Assessment', function () {
       var expected_request_object = {
         __page: 2,
         __page_size: 10,
-        __search: '',
-        __sort: 'title|description_inline|name|email',
-        __sort_desc: false
+        __sort: 'title,description_inline,name,email'
       };
 
       result = Assessment._generate_pagination_request_params(origin_object);
@@ -52,10 +48,8 @@ describe('can.Model.Assessment', function () {
 
       var expected_request_object = {
         __page: 1,
-        __page_size: 5,
-        __search: '',
-        __sort: 'title|description_inline|name|email',
-        __sort_desc: false
+        __page_size: 10,
+        __sort: 'title,description_inline,name,email'
       };
 
       result = Assessment._generate_pagination_request_params(origin_object);
@@ -112,12 +106,10 @@ describe('can.Model.Assessment', function () {
         spyOn($, 'ajax').and.callFake(function (req) {
           var deffered = $.Deferred();
           expect(req.url).toEqual('/api/assessments');
-          expect(req.data).toEqual({ 
-            __page: 1, 
-            __page_size: 5, 
-            __search: '', 
-            __sort: 'title|description_inline|name|email', 
-            __sort_desc: false 
+          expect(req.data).toEqual({
+            __page: 1,
+            __page_size: 10,
+            __sort: 'title,description_inline,name,email'
           });
           deffered.resolve({});
           return deffered.promise();
@@ -131,12 +123,10 @@ describe('can.Model.Assessment', function () {
         spyOn($, 'ajax').and.callFake(function (req) {
           var deffered = $.Deferred();
           expect(req.url).toEqual('/api/assessments');
-          expect(req.data).toEqual({ 
-            __page: 3, 
-            __page_size: 5, 
-            __search: '', 
-            __sort: 'title|description_inline|name|email', 
-            __sort_desc: false 
+          expect(req.data).toEqual({
+            __page: 3,
+            __page_size: 10,
+            __sort: 'title,description_inline,name,email'
           });
           deffered.resolve({});
           return deffered.promise();
@@ -150,22 +140,22 @@ describe('can.Model.Assessment', function () {
         spyOn($, 'ajax').and.callFake(function (req) {
           var deffered = $.Deferred();
           expect(req.url).toEqual('/api/assessments');
-          expect(req.data).toEqual({ 
-            __page: 10, 
-            __page_size: 10, 
-            __search: 'verified', 
-            __sort: 'status', 
-            __sort_desc: true 
+          expect(req.data).toEqual({
+            __page: 10,
+            __page_size: 10,
+            __search: 'verified',
+            __sort: 'status',
+            __sort_desc: true
           });
           deffered.resolve({});
           return deffered.promise();
         });
 
         Assessment.findAll({
-          page: 10, 
-          page_size: 10, 
-          search_value: 'verified', 
-          sort_value: 'status', 
+          page: 10,
+          page_size: 10,
+          search_value: 'verified',
+          sort_value: 'status',
           sort_desc: true
         });
       });
