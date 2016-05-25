@@ -14,7 +14,16 @@ class RecordBuilder(object):
 
   def as_record(self, obj):
     # Defaults. These work when the record is not a custom attribute
-    properties = dict([(attr, getattr(obj, attr))
+    def compound_getattr(obj, attr):
+      """compound_getattr(assessment, 'contact.name') == assessment.contact.name
+
+      None will be returned also if assessment.contact is None.
+      """
+      for attr_part in attr.split('.'):
+        obj = getattr(obj, attr_part, None)
+      return obj
+
+    properties = dict([(attr, compound_getattr(obj, attr))
                        for attr in self._fulltext_attrs])
     record_id = obj.id
     record_type = obj.__class__.__name__
