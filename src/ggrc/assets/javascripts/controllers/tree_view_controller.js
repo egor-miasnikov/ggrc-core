@@ -429,6 +429,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     // { property: "controls", model: CMS.Models.Control, }
     // { parent_find_param: "system_id" ... }
     scroll_page_count: 0.5, // pages above and below viewport
+    scroll_page_count_for_pagination: 3, //temporary amount pages above and below viewport
     is_subtree: false
   },
   do_not_propagate: [
@@ -953,6 +954,11 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
       hi = mid;
     }
     pageCount = this.options.scroll_page_count;
+
+    if(GGRC.page_instance().type === 'Audit' && this.options.model.shortName === 'Assessment'){
+      pageCount =  this.options.scroll_page_count_for_pagination;
+    }
+
     while (lo > 0 && elPosition(children[lo - 1]) >= (-pageCount)) {
       lo -= 1;
     }
