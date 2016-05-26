@@ -35,7 +35,8 @@ describe('can.Model.Assessment', function () {
       var expected_request_object = {
         __page: 2,
         __page_size: 10,
-        __sort: 'title,description_inline,name,email'
+        __sort: 'title,description_inline,name,email',
+        __sort_desc: false
       };
 
       result = Assessment._generate_pagination_request_params(origin_object);
@@ -49,7 +50,8 @@ describe('can.Model.Assessment', function () {
       var expected_request_object = {
         __page: 1,
         __page_size: 10,
-        __sort: 'title,description_inline,name,email'
+        __sort: 'title,description_inline,name,email',
+        __sort_desc: false
       };
 
       result = Assessment._generate_pagination_request_params(origin_object);
@@ -109,7 +111,8 @@ describe('can.Model.Assessment', function () {
           expect(req.data).toEqual({
             __page: 1,
             __page_size: 10,
-            __sort: 'title,description_inline,name,email'
+            __sort: 'title,description_inline,name,email',
+            __sort_desc: false
           });
           deffered.resolve({});
           return deffered.promise();
@@ -126,8 +129,10 @@ describe('can.Model.Assessment', function () {
           expect(req.data).toEqual({
             __page: 3,
             __page_size: 10,
-            __sort: 'title,description_inline,name,email'
+            __sort: 'title,description_inline,name,email',
+            __sort_desc: false
           });
+
           deffered.resolve({});
           return deffered.promise();
         });
@@ -155,7 +160,7 @@ describe('can.Model.Assessment', function () {
           page: 10,
           page_size: 10,
           search_value: 'verified',
-          sort_value: 'status',
+          sort_by: 'status',
           sort_desc: true
         });
       });

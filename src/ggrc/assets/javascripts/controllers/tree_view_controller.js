@@ -747,11 +747,15 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
             this.element.after(frag);
             can.bind.call(this.element.parent().find('.pagination a'),
               'click',
-              this.to_page.bind(this)
+              this.change_page.bind(this)
             );
             can.bind.call(this.element.parent().find('.count button'),
               'click',
               this.set_page_size.bind(this)
+            );
+            can.bind.call(this.element.parent().find('input[name=page-number]'),
+              'change',
+              this.set_current_page.bind(this)
             );
           }.bind(this))
         ));
@@ -1400,18 +1404,24 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     return {
       page: this.options.paging.attr("current"),
       page_size: this.options.paging.attr("page_size"),
-      search_value: this.options.paging.attr("filter")
+      search_value: this.options.paging.attr("filter"),
+      sort_direction: this.options.sort_direction,
+      sort_by: this.options.sort_by
     }
   },
 
-  to_page: function (event) {
-    var page = event.currentTarget.dataset.page;
-    if(page >= 1 && page <= this.options.paging.count) {
-      this.options.paging.attr("current", page);
+  _to_page: function (page_number) {
+    if(page_number >= 1 && page_number <= this.options.paging.count) {
+      this.options.paging.attr("current", page_number);
     } else {
       return;
     }
     this.find();
+  },
+
+  change_page: function (event) {
+    var page = event.currentTarget.dataset.page;
+    this._to_page(page);
   },
 
   save_paging_info: function () {
@@ -1429,6 +1439,14 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     this.options.paging.attr("page_size", page_size);
     this.options.paging.attr("current", 1);
     this.find();
+  },
+
+  set_current_page: function (event) {
+    var $el = $(event.currentTarget)
+      , value = parseFloat($el.val());
+
+    this._to_page(value);
+    $el.val('');
   },
 
   find: function () {
@@ -1458,6 +1476,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     var order;
     var order_factor;
     var comparator;
+    var page_instance = GGRC.page_instance();
 
     if (key !== this.options.sort_by) {
       this.options.sort_direction = null;
@@ -1488,7 +1507,12 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
 
     $el.addClass(order);
 
-    this.reload_list();
+    // Temporary solutions for apply pagination on Assessments view
+    if(page_instance.type === 'Audit' && this.options.model.shortName === 'Assessment'){
+      this.find();
+    } else {
+      this.reload_list();
+    }
   },
 
   set_tree_display_list: function (ev) {
