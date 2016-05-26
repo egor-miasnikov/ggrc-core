@@ -68,9 +68,11 @@ describe('CMS.Controllers.TreeView', function () {
         page: 1,
         page_size: 10,
         search_value: undefined
-      };
+      },
+        result = method();
 
-      expect(method()).toEqual(expected);
+      expect(result.page).toEqual(expected.page);
+      expect(result.page_size).toEqual(expected.page_size);
     });
 
     it('return params for paging request', function () {
@@ -78,13 +80,18 @@ describe('CMS.Controllers.TreeView', function () {
         page: 5,
         page_size: 25,
         search_value: undefined
-      };
+      },
+        result;
 
       ctrlInst.options.paging.attr('current', 5);
       ctrlInst.options.paging.attr('total', 150);
       ctrlInst.options.paging.attr('page_size', 25);
 
-      expect(method()).toEqual(expected);
+      result = method();
+
+      expect(result.page).toEqual(expected.page);
+      expect(result.page_size).toEqual(expected.page_size);
+      expect(result.current).toEqual(expected.current);
     });
   });
 

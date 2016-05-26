@@ -56,26 +56,14 @@
   }
   .filter-input-wrap {
     width: auto;
-    margin-right: 594px;
+    margin-right: 164px;
     margin-left: 45px;
   }
   .filter-button-wrap {
     width: 164px;
-    right: 420px;
-  }
-  .filter-pagination-wrap {
-    width: 430px;
     right: 0;
-    padding: 5px 0;
-    .filter-pagination {
-      .pagination {
-        input {
-          height: 26px;
-          margin: 0;
-        }
-      }
-    }
   }
+
   .filter-title,
   .filter-pagination {
     h6 {
@@ -85,6 +73,27 @@
       font-size: 16px;
       line-height: 20px;
       padding-top: 10px;
+    }
+  }
+  &.ggrc-pagination {
+    .filter-input-wrap {
+      margin-right: 594px;
+    }
+    .filter-button-wrap {
+      right: 420px;
+    }
+    .filter-pagination-wrap {
+      width: 430px;
+      right: 0;
+      padding: 5px 0;
+      .filter-pagination {
+        .pagination {
+          input {
+            height: 26px;
+            margin: 0;
+          }
+        }
+      }
     }
   }
   .filter-input {

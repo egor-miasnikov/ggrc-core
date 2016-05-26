@@ -31,7 +31,7 @@
             </a>
         </li>
         <li>
-            <input type="text" class="input" placeholder="{{page_placeholder paging.current paging.count}}">
+            <input type="text" name="page-number" class="input" placeholder="{{page_placeholder paging.current paging.count}}">
         </li>
         <li class="{{#if_equals paging.current paging.count}}disabled{{/if_equals}}">
             <a href="javascript://" data-page="{{math paging.current "+" 1}}">
@@ -46,4 +46,3 @@
     </ul>
     <div class="clearfix"></div>
 </div>
-

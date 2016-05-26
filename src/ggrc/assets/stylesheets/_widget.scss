@@ -155,6 +155,9 @@
           width: 120px;
           float: left;
           text-align: center;
+          &:focus {
+            border-color: $widgetBorder;
+          }
         }
       }
     }

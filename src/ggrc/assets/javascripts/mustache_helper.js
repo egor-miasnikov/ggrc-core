@@ -3420,7 +3420,7 @@ Mustache.registerHelper("page_info", function (current, page_size, total, option
   total = parseFloat(Mustache.resolve(total));
 
   var first_visible = (current - 1) * page_size + 1
-    , last_visible = current * page_size;
+    , last_visible = current * page_size < total ? current * page_size : total;
 
   return first_visible + '-' + last_visible + ' of ' + total + ' items';
 });
@@ -3431,4 +3431,15 @@ Mustache.registerHelper("page_placeholder", function (current, count, options) {
 
   return 'Page ' + current + ' of ' + count;
 });
+
+Mustache.registerHelper("if_assessment_instance", function (options) {
+  var page_instance = GGRC.page_instance();
+
+  if (page_instance.type === 'Audit' && this.model.shortName === 'Assessment') {
+    return options.fn(options.contexts);
+  } else {
+    return options.inverse(options.contexts);
+  }
+});
+  
 })(this, jQuery, can);
