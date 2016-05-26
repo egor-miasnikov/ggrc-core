@@ -267,7 +267,7 @@ class TestResource(TestCase):
     ascending"""
     self.mock_models(count=3)
     response = self.client.get(self.mock_url(sort='updated_at',
-                                             sort_desc=False),
+                                             sort_desc='false'),
                                headers=self.headers())
     resp_models, _ = self.parse_response(response=response)
 
@@ -280,7 +280,7 @@ class TestResource(TestCase):
     descending"""
     self.mock_models(count=3)
     response = self.client.get(self.mock_url(sort='updated_at',
-                                             sort_desc=True),
+                                             sort_desc='true'),
                                headers=self.headers())
     resp_models, _ = self.parse_response(response=response)
 

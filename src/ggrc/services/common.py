@@ -393,25 +393,11 @@ class ModelView(View):
     return 'updated_at'
 
   @property
-  def related_id(self):
-    return self._related_id
-
-  @related_id.setter
-  def related_id(self, related_id):
-    self._related_id = related_id
-
-  @property
   def modified_attr(self):
     """Return the model attribute to be used for Last-Modified header and
     sorting collection elements.
     """
     return getattr(self.model, self.modified_attr_name)
-
-  def modified_attr_rel(self, model):
-    """Return the related model attribute to be used for Last-Modified header and
-    sorting collection elements.
-    """
-    return getattr(model, self.modified_attr_name)
 
   def modified_at(self, obj):
     return getattr(obj, self.modified_attr_name)
@@ -463,14 +449,13 @@ class ModelView(View):
 
     return columns
 
-  def get_collection_matches(self, model, filter_by_contexts=True, filter_by_related_model=False):
+  def get_collection_matches(self, model, filter_by_contexts=True):
     columns = self.get_match_columns(model)
     query = db.session.query(*columns).filter(
         self._get_type_where_clause(model))
     return self.filter_query_by_request(
         query, model,
-        filter_by_contexts=filter_by_contexts,
-        filter_by_related_model=filter_by_related_model
+        filter_by_contexts=filter_by_contexts
     )
 
   def get_resource_match_query(self, model, id):
@@ -491,13 +476,14 @@ class ModelView(View):
     return self.filter_query_by_request(
         query, self.model, filter_by_contexts=filter_by_contexts)
 
-  def filter_query_by_request(self, query, model, filter_by_contexts=True, filter_by_related_model=False):  # noqa
+  def filter_query_by_request(self, query, model, filter_by_contexts=True):  # noqa
     joinlist = []
-    if filter_by_related_model:
-      ids = ggrc.models.relationship_helper.RelationshipHelper.get_ids_related_to(
-        model.__name__,
-        self.model.__name__,
-        [self.related_id]
+    if self._related_id is not None:
+      from ggrc.models.relationship_helper import RelationshipHelper
+      ids = RelationshipHelper.get_ids_related_to(
+        object_type=model.__name__,
+        related_type=self.model.__name__,
+        related_ids=[self._related_id]
       )
       query = query.filter(model.id.in_(ids))
     elif request.args:
@@ -561,7 +547,7 @@ class ModelView(View):
           # if sorting by invalid attribute?
           pass
 
-    order_properties.append(self.modified_attr_rel(model).desc())
+    order_properties.append(self.modified_at(model).desc())
     order_properties.append(model.id.desc())
     query = query.order_by(*order_properties)
 
@@ -591,14 +577,14 @@ class ModelView(View):
   def not_found_response(self):
     return current_app.make_response((self.not_found_message(), 404, []))
 
-  def collection_last_modified(self):
+  def collection_last_modified(self, model):
     """Calculate the last time a member of the collection was modified. This
     method relies on the fact that the collection table has an `updated_at` or
     other column with a relevant timestamp; services for models that don't have
     this field **MUST** override this method.
     """
     result = db.session.query(
-        self.modified_attr).order_by(self.modified_attr.desc()).first()
+        self.modified_at(model)).order_by(self.modified_at(model).desc()).first()
     if result is not None:
       return self.modified_at(result)
     return datetime.datetime.now()
@@ -741,6 +727,8 @@ class Resource(ModelView):
            and 'X-Requested-By' not in request.headers:
           raise BadRequest('X-Requested-By header is REQUIRED.')
 
+      model = self.model
+
       with benchmark("dispatch_request > Try"):
         try:
           if method == 'GET':
@@ -760,13 +748,13 @@ class Resource(ModelView):
                     raise Forbidden()
 
                 model = ggrc.models.inflector.get_model(kwargs[self.rel_name])
-                self.related_id = obj.id
+                self._related_id = obj.id
 
-                return self.collection_get(model, filter_by_related_model=True)
+                return self.collection_get(model)
               else:
                 return self.get(*args, **kwargs)
             else:
-              return self.collection_get()
+              return self.collection_get(model)
           elif method == 'POST':
             if self.pk in kwargs and kwargs[self.pk] is not None:
               return self.post(*args, **kwargs)
@@ -1021,11 +1009,8 @@ class Resource(ModelView):
     return objs, cache_op
 
   @_check_accept_header
-  def collection_get(self, model=None, filter_by_related_model=False):
+  def collection_get(self, model):
     """Get collection matches, apply search and sorting"""
-    if model is None:
-      model = self.model
-
     with benchmark("dispatch_request > collection_get > Collection matches"):
       # We skip querying by contexts for Creator role and relationship objects,
       # because it will filter out objects that the Creator can access.
@@ -1036,8 +1021,7 @@ class Resource(ModelView):
       )
       matches_query = self.get_collection_matches(
           model=model,
-          filter_by_contexts=filter_by_contexts,
-          filter_by_related_model=filter_by_related_model
+          filter_by_contexts=filter_by_contexts
       )
 
     # apply collection pagination
@@ -1084,7 +1068,7 @@ class Resource(ModelView):
       with benchmark("Make response"):
         return self.json_success_response(
             response_object=collection,
-            last_modified=self.collection_last_modified(),
+            last_modified=self.collection_last_modified(model),
             cache_op=cache_op,
         )
 
@@ -1306,10 +1290,10 @@ class Resource(ModelView):
     view_func = service_class.as_view(service_class.endpoint_name())
     view_func = cls.decorate_view_func(view_func, decorators)
 
-    single_res = '<{type}:{pk}>'.format(type=cls.pk_type, pk=cls.pk)
-    resources = '<{rel_type}:{rel_name}>'.format(single_res=single_res,
-                                                 rel_type=cls.rel_type,
-                                                 rel_name=cls.rel_name)
+    fmt = lambda **kwargs: '<{type}:{value}>'.format(**kwargs)
+    single_res = fmt(type=cls.pk_type, value=cls.pk)
+    nested_res = fmt(type=cls.rel_type, value=cls.rel_name)
+
     app.add_url_rule(
         url,
         defaults={cls.pk: None},
@@ -1320,7 +1304,9 @@ class Resource(ModelView):
         view_func=view_func,
         methods=['GET', 'PUT', 'DELETE'])
     app.add_url_rule(
-        '{url}/{single_res}/{resources}'.format(url=url, single_res=single_res, resources=resources),
+        '{url}/{single_res}/{resources}'.format(url=url,
+                                                single_res=single_res,
+                                                resources=nested_res),
         view_func=view_func,
         methods=['GET'])
 
