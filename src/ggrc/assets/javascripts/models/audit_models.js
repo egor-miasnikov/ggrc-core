@@ -719,6 +719,7 @@
       var url = '/api/assessments'
         , page_instance = GGRC.page_instance();
 
+      // Temporary solutions for apply pagination on Assessments view
       if(page_instance.type === 'Audit' && this.shortName === 'Assessment') {
         params = this._generate_pagination_request_params(params);
       }
@@ -885,7 +886,8 @@
       var query_object = {
         __page: params.page || 1,
         __page_size: params.page_size || 10,
-        __sort: params.sort_value || 'title,description_inline,name,email'
+        __sort: params.sort_by || 'title,description_inline,name,email',
+        __sort_desc: params.sort_direction || false
       };
 
       if(params.sort_desc !== undefined){
@@ -895,6 +897,8 @@
       if(params.search_value !== undefined){
         query_object.__search = params.search_value;
       }
+
+      query_object.__sort = query_object.__sort.replace(/\|/g, ',');
 
       return query_object;
     }
