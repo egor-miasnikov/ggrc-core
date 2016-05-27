@@ -173,11 +173,12 @@ can.Control('CMS.Controllers.TreeLoader', {
 
     this._display_deferred = $.when(this._attached_deferred, this.prepare());
 
-    this._display_deferred = this._display_deferred.then(this._ifNotRemoved(function () {
-      return $.when(that.fetch_list(), that.init_view())
-        .then(that._ifNotRemoved(that.proxy('draw_list')))
-        .then(that.save_paging_info.bind(that));
-    })).done(tracker_stop);
+    this._display_deferred = this._display_deferred
+      .then(this._ifNotRemoved(function () {
+        return $.when(that.fetch_list(), that.init_view())
+          .then(that._ifNotRemoved(that.proxy('draw_list')))
+          .then(that.save_paging_info.bind(that));
+      })).done(tracker_stop);
 
     this._display_deferred.then(function (e) {
       if (!this._will_navigate()) {
@@ -1413,12 +1414,14 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
       search_value: this.options.paging.attr("filter"),
       sort_direction: this.options.sort_direction,
       sort_by: this.options.sort_by
-    }
+    };
   },
 
-  _to_page: function (page_number) {
-    if(page_number >= 1 && page_number <= this.options.paging.count) {
-      this.options.paging.attr("current", page_number);
+  _to_page: function (number) {
+    if (number >= 1 &&
+      number <= this.options.paging.count &&
+      number !== this.options.paging.current) {
+      this.options.paging.attr("current", number);
     } else {
       return;
     }
@@ -1431,25 +1434,26 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
   },
 
   save_paging_info: function () {
-    var page_object = GGRC.page_object;
+    var globalInfo = GGRC.page_object.paging;
+    var paging = this.options.paging;
 
-    if(page_object.paging && page_object.paging[this.options.model.shortName]) {
-      this.options.paging.attr('count', page_object.paging[this.options.model.shortName].count);
-      this.options.paging.attr('total', page_object.paging[this.options.model.shortName].total);
+    if (globalInfo && globalInfo[this.options.model.shortName]) {
+      paging.attr('count', globalInfo[this.options.model.shortName].count);
+      paging.attr('total', globalInfo[this.options.model.shortName].total);
     }
   },
 
   set_page_size: function (event) {
     var $el = $(event.currentTarget);
-    var page_size = $el.data('size');
-    this.options.paging.attr("page_size", page_size);
+    var size = $el.data('size');
+    this.options.paging.attr("page_size", size);
     this.options.paging.attr("current", 1);
     this.find();
   },
 
   set_current_page: function (event) {
-    var $el = $(event.currentTarget)
-      , value = parseFloat($el.val());
+    var $el = $(event.currentTarget);
+    var value = parseFloat($el.val());
 
     this._to_page(value);
     $el.val('');
@@ -1482,7 +1486,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     var order;
     var order_factor;
     var comparator;
-    var page_instance = GGRC.page_instance();
+    var instance = GGRC.page_instance();
 
     if (key !== this.options.sort_by) {
       this.options.sort_direction = null;
@@ -1514,7 +1518,8 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     $el.addClass(order);
 
     // Temporary solutions for apply pagination on Assessments view
-    if(page_instance.type === 'Audit' && this.options.model.shortName === 'Assessment'){
+    if (instance.type === 'Audit' &&
+      this.options.model.shortName === 'Assessment') {
       this.find();
     } else {
       this.reload_list();

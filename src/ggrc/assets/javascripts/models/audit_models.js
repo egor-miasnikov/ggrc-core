@@ -335,8 +335,8 @@
     }
   }, {
     form_preload: function (new_object_form) {
-      var page_instance = GGRC.page_instance();
-      this.attr('comment', page_instance);
+      var instance = GGRC.page_instance();
+      this.attr('comment', instance);
     }
   });
 
@@ -716,12 +716,12 @@
     root_collection: 'assessments',
     findOne: 'GET /api/assessments/{id}',
     findAll: function (params) {
-      var url = '/api/assessments'
-        , page_instance = GGRC.page_instance();
+      var url = '/api/assessments';
+      var instance = GGRC.page_instance();
 
       // Temporary solutions for apply pagination on Assessments view
-      if(page_instance.type === 'Audit' && this.shortName === 'Assessment') {
-        url = page_instance.selfLink + '/assessments';
+      if (instance.type === 'Audit' && this.shortName === 'Assessment') {
+        url = instance.selfLink + '/assessments';
         params = this._generate_pagination_request_params(params);
       }
 
@@ -730,7 +730,7 @@
         url: url,
         data: params,
         headers: {
-          Accept:'application/json, text/javascript, */*; q=0.01'
+          Accept: 'application/json, text/javascript, */*; q=0.01'
         }
       }).promise();
     },
@@ -884,24 +884,24 @@
       );
     },
     _generate_pagination_request_params: function (params) {
-      var query_object = {
+      var query = {
         __page: params.page || 1,
         __page_size: params.page_size || 10,
         __sort: params.sort_by || 'title,description_inline,name,email',
         __sort_desc: params.sort_direction || false
       };
 
-      if(params.sort_desc !== undefined){
-        query_object.__sort_desc = params.sort_desc;
+      if (params.sort_desc !== undefined) {
+        query.__sort_desc = params.sort_desc;
       }
 
-      if(params.search_value !== undefined){
-        query_object.__search = params.search_value;
+      if (params.search_value !== undefined) {
+        query.__search = params.search_value;
       }
 
-      query_object.__sort = query_object.__sort.replace(/\|/g, ',');
+      query.__sort = query.__sort.replace(/\|/g, ',');
 
-      return query_object;
+      return query;
     }
   }, {
     form_preload: function (newObjectForm) {
@@ -938,15 +938,15 @@
       }
     },
     _set_recipients: function (recipients) {
+      var labels = ['Creator', 'Assessor', 'Verifier'];
       if (recipients) {
-        labels = ['Creator', 'Assessor', 'Verifier'];
         _.each(labels, function (label) {
           this.attr(label, _.includes(recipients, label));
         }.bind(this));
       }
     },
     _get_recipients: function () {
-      labels = ['Creator', 'Assessor', 'Verifier'];
+      var labels = ['Creator', 'Assessor', 'Verifier'];
       return _.map(labels, function (label) {
         return this.attr(label) ? label : '';
       }.bind(this)).join(',');
