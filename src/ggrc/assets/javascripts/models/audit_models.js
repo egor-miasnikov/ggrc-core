@@ -721,6 +721,7 @@
 
       // Temporary solutions for apply pagination on Assessments view
       if(page_instance.type === 'Audit' && this.shortName === 'Assessment') {
+        url = page_instance.selfLink + '/assessments';
         params = this._generate_pagination_request_params(params);
       }
 
