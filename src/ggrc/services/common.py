@@ -373,8 +373,11 @@ class ModelView(View):
   MAX_PAGE_SIZE = 100
   pk = 'id'
   pk_type = 'int'
+  rel_name = 'resources'
+  rel_type = 'string'
 
   _model = None
+  _related_id = None
 
   # Simple accessor properties
   @property
@@ -447,11 +450,13 @@ class ModelView(View):
     return columns
 
   def get_collection_matches(self, model, filter_by_contexts=True):
-    columns = self.get_match_columns(self.model)
+    columns = self.get_match_columns(model)
     query = db.session.query(*columns).filter(
         self._get_type_where_clause(model))
     return self.filter_query_by_request(
-        query, filter_by_contexts=filter_by_contexts)
+        query, model,
+        filter_by_contexts=filter_by_contexts
+    )
 
   def get_resource_match_query(self, model, id):
     columns = self.get_match_columns(model)
@@ -469,12 +474,20 @@ class ModelView(View):
     else:
       query = db.session.query(self.model)
     return self.filter_query_by_request(
-        query, filter_by_contexts=filter_by_contexts)
+        query, self.model, filter_by_contexts=filter_by_contexts)
 
-  def filter_query_by_request(self, query, filter_by_contexts=True):  # noqa
+  def filter_query_by_request(self, query, model, filter_by_contexts=True):  # noqa
     joinlist = []
-    if request.args:
-      querybuilder = AttributeQueryBuilder(self.model)
+    if self._related_id is not None:
+      from ggrc.models.relationship_helper import RelationshipHelper
+      ids = RelationshipHelper.get_ids_related_to(
+        object_type=model.__name__,
+        related_type=self.model.__name__,
+        related_ids=[self._related_id]
+      )
+      query = query.filter(model.id.in_(ids))
+    elif request.args:
+      querybuilder = AttributeQueryBuilder(model)
       filter_, joinlist, _ = querybuilder.collection_filters(request.args)
       if filter_ is not None:
         for j in joinlist:
@@ -482,11 +495,11 @@ class ModelView(View):
         query = query.filter(filter_)
 
     if filter_by_contexts:
-      contexts = permissions.read_contexts_for(self.model.__name__)
-      resources = permissions.read_resources_for(self.model.__name__)
-      filter_expr = context_query_filter(self.model.context_id, contexts)
+      contexts = permissions.read_contexts_for(model.__name__)
+      resources = permissions.read_resources_for(model.__name__)
+      filter_expr = context_query_filter(model.context_id, contexts)
       if resources:
-        filter_expr = or_(filter_expr, self.model.id.in_(resources))
+        filter_expr = or_(filter_expr, model.id.in_(resources))
       query = query.filter(filter_expr)
       for j in joinlist:
         j_class = j.property.mapper.class_
@@ -495,14 +508,14 @@ class ModelView(View):
         if j_contexts is not None:
           j_filter_expr = context_query_filter(j_class.context_id, j_contexts)
           if resources:
-            j_filter_expr = or_(j_filter_expr, self.model.id.in_(j_resources))
+            j_filter_expr = or_(j_filter_expr, model.id.in_(j_resources))
           query = query.filter(j_filter_expr)
         elif resources:
-          query = query.filter(self.model.id.in_(resources))
+          query = query.filter(model.id.in_(resources))
 
     if '__search' in request.args:
       terms = request.args['__search']
-      types = self._get_matching_types(self.model)
+      types = self._get_matching_types(model)
       indexer = get_indexer()
       models = indexer._get_grouped_types(types)
       search_query = indexer._get_type_query(models, 'read', None)
@@ -513,7 +526,7 @@ class ModelView(View):
         search_query = indexer._add_owner_query(
             search_query, models, get_current_user_id())
       search_subquery = search_query.subquery()
-      query = query.filter(self.model.id.in_(search_subquery))
+      query = query.filter(model.id.in_(search_subquery))
 
     order_properties = []
     if '__sort' in request.args:
@@ -524,7 +537,7 @@ class ModelView(View):
         if sort_attr.startswith('-'):
           attr_desc = not sort_desc
           sort_attr = sort_attr[1:]
-        order_property = getattr(self.model, sort_attr, None)
+        order_property = getattr(model, sort_attr, None)
         if order_property and hasattr(order_property, 'desc'):
           order_properties.append(
               order_property.desc() if attr_desc else order_property.asc()
@@ -534,8 +547,8 @@ class ModelView(View):
           # if sorting by invalid attribute?
           pass
 
-    order_properties.append(self.modified_attr.desc())
-    order_properties.append(self.model.id.desc())
+    order_properties.append(self.modified_at(model).desc())
+    order_properties.append(model.id.desc())
     query = query.order_by(*order_properties)
 
     if '__limit' in request.args:
@@ -564,14 +577,14 @@ class ModelView(View):
   def not_found_response(self):
     return current_app.make_response((self.not_found_message(), 404, []))
 
-  def collection_last_modified(self):
+  def collection_last_modified(self, model):
     """Calculate the last time a member of the collection was modified. This
     method relies on the fact that the collection table has an `updated_at` or
     other column with a relevant timestamp; services for models that don't have
     this field **MUST** override this method.
     """
     result = db.session.query(
-        self.modified_attr).order_by(self.modified_attr.desc()).first()
+        self.modified_at(model)).order_by(self.modified_at(model).desc()).first()
     if result is not None:
       return self.modified_at(result)
     return datetime.datetime.now()
@@ -714,13 +727,34 @@ class Resource(ModelView):
            and 'X-Requested-By' not in request.headers:
           raise BadRequest('X-Requested-By header is REQUIRED.')
 
+      model = self.model
+
       with benchmark("dispatch_request > Try"):
         try:
           if method == 'GET':
             if self.pk in kwargs and kwargs[self.pk] is not None:
-              return self.get(*args, **kwargs)
+              if self.rel_name in kwargs and kwargs[self.rel_name] is not None:
+                with benchmark("Query for object"):
+                  obj = self.get_object(kwargs[self.pk])
+                if obj is None:
+                  return self.not_found_response()
+
+                with benchmark("Query read permissions"):
+                  if not permissions.is_allowed_read(
+                    self.model.__name__, obj.id, obj.context_id) \
+                    and not permissions.has_conditions('read', self.model.__name__):
+                    raise Forbidden()
+                  if not permissions.is_allowed_read_for(obj):
+                    raise Forbidden()
+
+                model = ggrc.models.inflector.get_model(kwargs[self.rel_name])
+                self._related_id = obj.id
+
+                return self.collection_get(model)
+              else:
+                return self.get(*args, **kwargs)
             else:
-              return self.collection_get()
+              return self.collection_get(model)
           elif method == 'POST':
             if self.pk in kwargs and kwargs[self.pk] is not None:
               return self.post(*args, **kwargs)
@@ -950,7 +984,7 @@ class Resource(ModelView):
     }
     return matches, collection_extras
 
-  def get_matched_resources(self, matches):
+  def get_matched_resources(self, model, matches):
     objs_map = {}
     if self.has_cache():
       self.request.cache_manager = _get_cache_manager()
@@ -963,7 +997,7 @@ class Resource(ModelView):
     cache_op = 'Hit' if objs_map else 'Miss'
     if database_matches:
       with benchmark("Query database for resources"):
-        database_objs = self.get_resources_from_database(matches)
+        database_objs = self.get_resources_from_database(model, matches)
         objs_map.update(database_objs)
       if self.has_cache():
         with benchmark("Add resources to cache"):
@@ -975,19 +1009,19 @@ class Resource(ModelView):
     return objs, cache_op
 
   @_check_accept_header
-  def collection_get(self):
-    # get collection matches, apply search and sorting
+  def collection_get(self, model):
+    """Get collection matches, apply search and sorting"""
     with benchmark("dispatch_request > collection_get > Collection matches"):
       # We skip querying by contexts for Creator role and relationship objects,
       # because it will filter out objects that the Creator can access.
       # We are doing a special permissions check for these objects
       # below in the filter_resource method.
       filter_by_contexts = not (
-          self.model.__name__ in ("Relationship", "Revision") and _is_creator()
+          model.__name__ in ("Relationship", "Revision") and _is_creator()
       )
       matches_query = self.get_collection_matches(
-          model=self.model,
-          filter_by_contexts=filter_by_contexts,
+          model=model,
+          filter_by_contexts=filter_by_contexts
       )
 
     # apply collection pagination
@@ -1011,7 +1045,7 @@ class Resource(ModelView):
             'context_id': m[2],
         } for m in matches]
       else:
-        objs, cache_op = self.get_matched_resources(matches=matches)
+        objs, cache_op = self.get_matched_resources(model=model, matches=matches)
         with benchmark("Filter resources based on permissions"):
           objs = filter_resource(objs)
 
@@ -1024,7 +1058,7 @@ class Resource(ModelView):
         custom_fields = request.args['__fields'].split(',')
         objs = [{f: o[f] for f in custom_fields if f in o} for o in objs]
       with benchmark("Serialize collection"):
-        collection = self.build_collection_representation(objs, extras=extras)
+        collection = self.build_collection_representation(objs, model=model, extras=extras)
 
       if ('If-None-Match' in self.request.headers and
               self.request.headers['If-None-Match'] == etag(collection)):
@@ -1034,7 +1068,7 @@ class Resource(ModelView):
       with benchmark("Make response"):
         return self.json_success_response(
             response_object=collection,
-            last_modified=self.collection_last_modified(),
+            last_modified=self.collection_last_modified(model),
             cache_op=cache_op,
         )
 
@@ -1255,15 +1289,26 @@ class Resource(ModelView):
       service_class = cls
     view_func = service_class.as_view(service_class.endpoint_name())
     view_func = cls.decorate_view_func(view_func, decorators)
+
+    fmt = lambda **kwargs: '<{type}:{value}>'.format(**kwargs)
+    single_res = fmt(type=cls.pk_type, value=cls.pk)
+    nested_res = fmt(type=cls.rel_type, value=cls.rel_name)
+
     app.add_url_rule(
         url,
         defaults={cls.pk: None},
         view_func=view_func,
         methods=['GET', 'POST'])
     app.add_url_rule(
-        '{url}/<{type}:{pk}>'.format(url=url, type=cls.pk_type, pk=cls.pk),
+        '{url}/{single_res}'.format(url=url, single_res=single_res),
         view_func=view_func,
         methods=['GET', 'PUT', 'DELETE'])
+    app.add_url_rule(
+        '{url}/{single_res}/{resources}'.format(url=url,
+                                                single_res=single_res,
+                                                resources=nested_res),
+        view_func=view_func,
+        methods=['GET'])
 
   # Response helpers
   @classmethod
@@ -1315,9 +1360,7 @@ class Resource(ModelView):
     paging_obj['total'] = paging.total
     return paging_obj
 
-  def get_resources_from_database(self, matches):
-    # FIXME: This is cheating -- `matches` should be allowed to be any model
-    model = self.model
+  def get_resources_from_database(self, model, matches):
     ids = {m[0]: m for m in matches}
     query = model.eager_query()
     objs = query.filter(model.id.in_(ids.keys()))
@@ -1328,8 +1371,8 @@ class Resource(ModelView):
     ggrc.builder.json.publish_representation(resources)
     return resources
 
-  def build_collection_representation(self, objs, extras=None):
-    table_plural = self.model._inflector.table_plural
+  def build_collection_representation(self, objs, model, extras=None):
+    table_plural = model._inflector.table_plural
     collection_name = '{0}_collection'.format(table_plural)
     resource = {
         collection_name: {
