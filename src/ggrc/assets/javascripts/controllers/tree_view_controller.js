@@ -1153,9 +1153,16 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     var $existing = this.element.children('.cms_controllers_tree_view_node');
     var drawItemsDfds = [];
     var sortProp = this.options.sort_property;
-    var sortFunction = this.options.sort_function;
+    var sortFunction;
     var filter = this.options.filter;
     var res;
+    var page = GGRC.page_instance();
+
+    // Temporary solutions for apply pagination on Assessments view
+    if (page.type !== 'Audit' &&
+      this.options.model.shortName !== 'Assessment') {
+      sortFunction = this.options.sort_function;
+    }
 
     optionsList = can.makeArray(optionsList);
     can.map(optionsList, function (options) {
@@ -1411,7 +1418,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
       page: this.options.paging.attr("current"),
       page_size: this.options.paging.attr("page_size"),
       search_value: this.options.paging.attr("filter"),
-      sort_direction: this.options.sort_direction,
+      sort_direction: this.options.sort_direction === 'asc',
       sort_by: this.options.sort_by
     }
   },
