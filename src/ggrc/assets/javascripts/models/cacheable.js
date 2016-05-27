@@ -185,11 +185,11 @@ can.Model("can.Model.Cacheable", {
             , index = 0
             ;
 
-          if(sourceData[self.root_collection + "_collection"]) {
+          if (sourceData[self.root_collection + "_collection"]) {
             sourceData = sourceData[self.root_collection + "_collection"];
           }
-          if(sourceData[self.root_collection]) {
-            if(sourceData.paging) {
+          if (sourceData[self.root_collection]) {
+            if (sourceData.paging) {
               instance.paging = instance.paging || {};
               instance.paging[self.shortName] = sourceData.paging;
             }

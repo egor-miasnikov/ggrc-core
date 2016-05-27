@@ -1,9 +1,9 @@
 /*!
-  Copyright (C) 2016 Google Inc., authors, and contributors <see AUTHORS file>
-  Licensed under http://www.apache.org/licenses/LICENSE-2.0 <see LICENSE file>
-  Created By: peter@reciprocitylabs.com
-  Maintained By: peter@reciprocitylabs.com
-*/
+ Copyright (C) 2016 Google Inc., authors, and contributors <see AUTHORS file>
+ Licensed under http://www.apache.org/licenses/LICENSE-2.0 <see LICENSE file>
+ Created By: peter@reciprocitylabs.com
+ Maintained By: peter@reciprocitylabs.com
+ */
 
 describe('CMS.Controllers.TreeView', function () {
   'use strict';
@@ -48,7 +48,6 @@ describe('CMS.Controllers.TreeView', function () {
     var method;
 
     beforeEach(function () {
-
       ctrlInst = {
         options: new can.Map({
           paging: {
@@ -68,8 +67,8 @@ describe('CMS.Controllers.TreeView', function () {
         page: 1,
         page_size: 10,
         search_value: undefined
-      },
-        result = method();
+      };
+      var result = method();
 
       expect(result.page).toEqual(expected.page);
       expect(result.page_size).toEqual(expected.page_size);
@@ -80,8 +79,8 @@ describe('CMS.Controllers.TreeView', function () {
         page: 5,
         page_size: 25,
         search_value: undefined
-      },
-        result;
+      };
+      var result;
 
       ctrlInst.options.paging.attr('current', 5);
       ctrlInst.options.paging.attr('total', 150);
@@ -96,7 +95,6 @@ describe('CMS.Controllers.TreeView', function () {
   });
 
   describe('save_paging_info() method', function () {
-
     var ctrlInst;  // fake controller instance
     var method;
 
@@ -126,7 +124,6 @@ describe('CMS.Controllers.TreeView', function () {
     });
 
     it('check save_paging_info()', function () {
-
       method();
       expect(ctrlInst.options.paging.count).toEqual(20);
       expect(ctrlInst.options.paging.total).toEqual(160);
@@ -139,8 +136,8 @@ describe('CMS.Controllers.TreeView', function () {
     var $element;
 
     beforeEach(function () {
-
-      $element = $('<div><div class="cms_controllers_tree_view_node"></div></div>');
+      $element =
+        $('<div><div class="cms_controllers_tree_view_node"></div></div>');
 
       ctrlInst = {
         element: $element,
@@ -158,12 +155,11 @@ describe('CMS.Controllers.TreeView', function () {
     });
 
     it('find()', function () {
-
-      spyOn(ctrlInst.options.model, "findAll").and.returnValue(new $.Deferred().resolve([]));
+      spyOn(ctrlInst.options.model, "findAll")
+        .and.returnValue(new $.Deferred().resolve([]));
 
       method();
       expect(ctrlInst.enqueue_items).toHaveBeenCalled();
     });
-
   });
 });

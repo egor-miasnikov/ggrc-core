@@ -41,30 +41,29 @@ can.Control("GGRC.Controllers.TreeFilter", {
       parent_control.options.attr('sort_function', current_filter.order_by.compare);
       parent_control.options.attr('filter', current_filter);
       parent_control.reload_list();
-  }
-  , apply_filter_via_request : function(filter_string){
-         var parent_control = this.element.closest('.cms_controllers_dashboard_widgets')
-            .find(".cms_controllers_tree_view").control();
+  },
+  apply_filter_via_request: function (filter) {
+    var parent = this.element.closest('.cms_controllers_dashboard_widgets')
+      .find(".cms_controllers_tree_view").control();
 
-      parent_control.options.paging.attr('filter', filter_string);
-      parent_control.find();
-  }
-
-  , "input[type=reset] click" : function(el, ev) {
+    parent.options.paging.attr('filter', filter);
+    parent.find();
+  },
+  "input[type=reset] click": function (el, ev) {
     this.element.find("input[type=text]")[0].value = "";
-    
-    if(GGRC.page_instance().type === 'Audit'){
-      this.apply_filter_via_request(undefined)
-    }else{
+
+    if (GGRC.page_instance().type === 'Audit') {
+      this.apply_filter_via_request(undefined);
+    } else {
       this.apply_filter("");
     }
-  }
-
-  , "input[type=submit] click" : function(el, ev) {
-    if(GGRC.page_instance().type === 'Audit'){
-      this.apply_filter_via_request(this.element.find("input[type=text]")[0].value)
-    }else{
-      this.apply_filter(this.element.find("input[type=text]")[0].value)
+  },
+  "input[type=submit] click": function (el, ev) {
+    var value = this.element.find("input[type=text]")[0].value;
+    if (GGRC.page_instance().type === 'Audit') {
+      this.apply_filter_via_request(value);
+    } else {
+      this.apply_filter(value);
     }
   }
 

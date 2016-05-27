@@ -3401,45 +3401,48 @@ Mustache.registerHelper("un_camel_case", function (str, options) {
   return newval;
 });
 
-Mustache.registerHelper("math", function (lvalue, operator, rvalue, options) {
-  lvalue = parseFloat(Mustache.resolve(lvalue));
-  rvalue = parseFloat(Mustache.resolve(rvalue));
+  Mustache.registerHelper("math", function (lvalue, operator, rvalue, options) {
+    lvalue = parseFloat(Mustache.resolve(lvalue));
+    rvalue = parseFloat(Mustache.resolve(rvalue));
 
-  return {
-    "+": lvalue + rvalue,
-    "-": lvalue - rvalue,
-    "*": lvalue * rvalue,
-    "/": lvalue / rvalue,
-    "%": lvalue % rvalue
-  }[operator];
-});
+    return {
+      "+": lvalue + rvalue,
+      "-": lvalue - rvalue,
+      "*": lvalue * rvalue,
+      "/": lvalue / rvalue,
+      "%": lvalue % rvalue
+    }[operator];
+  });
 
-Mustache.registerHelper("page_info", function (current, page_size, total, options) {
-  current = parseFloat(Mustache.resolve(current));
-  page_size = parseFloat(Mustache.resolve(page_size));
-  total = parseFloat(Mustache.resolve(total));
+  Mustache.registerHelper("page_info", function (current, size, total) {
+    var first;
+    var last;
+    current = parseFloat(Mustache.resolve(current));
+    size = parseFloat(Mustache.resolve(size));
+    total = parseFloat(Mustache.resolve(total));
 
-  var first_visible = (current - 1) * page_size + 1
-    , last_visible = current * page_size < total ? current * page_size : total;
+    first = (current - 1) * size + 1;
+    last = current * size < total ? current * size : total;
 
-  return first_visible + '-' + last_visible + ' of ' + total + ' items';
-});
+    return last ? first + '-' + last + ' of ' + total + ' items' : 'No records';
+  });
 
-Mustache.registerHelper("page_placeholder", function (current, count, options) {
-  current = parseFloat(Mustache.resolve(current));
-  count = parseFloat(Mustache.resolve(count));
+  Mustache.registerHelper("page_placeholder", function (current, count) {
+    current = parseFloat(Mustache.resolve(current));
+    count = parseFloat(Mustache.resolve(count));
 
-  return 'Page ' + current + ' of ' + count;
-});
+    return count ? 'Page ' + current + ' of ' + count : '';
+  });
 
-Mustache.registerHelper("if_assessment_instance", function (options) {
-  var page_instance = GGRC.page_instance();
+  Mustache.registerHelper("if_assessment_instance", function (options) {
+    var instance = GGRC.page_instance();
+    var result;
 
-  if (page_instance.type === 'Audit' && this.model.shortName === 'Assessment') {
-    return options.fn(options.contexts);
-  } else {
-    return options.inverse(options.contexts);
-  }
-});
-  
+    if (instance.type === 'Audit' && this.model.shortName === 'Assessment') {
+      result = options.fn(options.contexts);
+    } else {
+      result = options.inverse(options.contexts);
+    }
+    return result;
+  });
 })(this, jQuery, can);
