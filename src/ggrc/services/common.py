@@ -24,6 +24,7 @@ from flask.views import View
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy.orm.exc
+from werkzeug.datastructures import ImmutableMultiDict
 from werkzeug.exceptions import BadRequest, Forbidden
 
 import ggrc.builder.json
@@ -36,8 +37,9 @@ from ggrc.fulltext.recordbuilder import fts_record_for
 from ggrc.login import get_current_user_id, get_current_user
 from ggrc.models.cache import Cache
 from ggrc.models.event import Event
-from ggrc.models.revision import Revision
 from ggrc.models.exceptions import ValidationError, translate_message
+from ggrc.models.inflector import get_model
+from ggrc.models.revision import Revision
 from ggrc.rbac import permissions, context_query_filter
 from .attribute_query import AttributeQueryBuilder
 from ggrc.models.background_task import BackgroundTask, create_task
@@ -449,13 +451,16 @@ class ModelView(View):
 
     return columns
 
-  def get_collection_matches(self, model, filter_by_contexts=True):
+  def get_collection_matches(self, model, request_args,
+                             filter_by_contexts=True):
     columns = self.get_match_columns(model)
-    query = db.session.query(*columns).filter(
-        self._get_type_where_clause(model))
+    filter_clause = self._get_type_where_clause(model)
+    query = db.session.query(*columns).filter(filter_clause)
     return self.filter_query_by_request(
-        query, model,
-        filter_by_contexts=filter_by_contexts
+        query=query,
+        model=model,
+        request_args=request_args,
+        filter_by_contexts=filter_by_contexts,
     )
 
   def get_resource_match_query(self, model, id):
@@ -467,28 +472,35 @@ class ModelView(View):
     return query
 
   # Default model/DB helpers
-  def get_collection(self, filter_by_contexts=True):
-    if '__stubs_only' not in request.args and \
-       hasattr(self.model, 'eager_query'):
+  def get_collection(self, request_args, filter_by_contexts=True):
+    if ('__stubs_only' not in request_args and
+          hasattr(self.model, 'eager_query')):
       query = self.model.eager_query()
     else:
       query = db.session.query(self.model)
-    return self.filter_query_by_request(
-        query, self.model, filter_by_contexts=filter_by_contexts)
 
-  def filter_query_by_request(self, query, model, filter_by_contexts=True):  # noqa
+    return self.filter_query_by_request(
+        query=query,
+        model=self.model,
+        request_args=request_args,
+        filter_by_contexts=filter_by_contexts,
+    )
+
+  def filter_query_by_request(self, query, model, request_args,
+                              filter_by_contexts=True):  # noqa
     joinlist = []
     if self._related_id is not None:
       from ggrc.models.relationship_helper import RelationshipHelper
       ids = RelationshipHelper.get_ids_related_to(
         object_type=model.__name__,
         related_type=self.model.__name__,
-        related_ids=[self._related_id]
+        related_ids=[self._related_id],
       )
       query = query.filter(model.id.in_(ids))
-    elif request.args:
-      querybuilder = AttributeQueryBuilder(model)
-      filter_, joinlist, _ = querybuilder.collection_filters(request.args)
+
+    elif request_args:
+      query_builder = AttributeQueryBuilder(model)
+      filter_, joinlist, _ = query_builder.collection_filters(request_args)
       if filter_ is not None:
         for j in joinlist:
           query = query.join(j)
@@ -513,8 +525,8 @@ class ModelView(View):
         elif resources:
           query = query.filter(model.id.in_(resources))
 
-    if '__search' in request.args:
-      terms = request.args['__search']
+    if '__search' in request_args:
+      terms = request_args['__search']
       types = self._get_matching_types(model)
       indexer = get_indexer()
       models = indexer._get_grouped_types(types)
@@ -522,16 +534,16 @@ class ModelView(View):
       search_query = and_(search_query, indexer._get_filter_query(terms))
       search_query = db.session.query(indexer.record_type.key).filter(
           search_query)
-      if '__mywork' in request.args:
+      if '__mywork' in request_args:
         search_query = indexer._add_owner_query(
             search_query, models, get_current_user_id())
       search_subquery = search_query.subquery()
       query = query.filter(model.id.in_(search_subquery))
 
     order_properties = []
-    if '__sort' in request.args:
-      sort_attrs = request.args['__sort'].split(",")
-      sort_desc = request.args.get('__sort_desc', 'false') == 'true'
+    if '__sort' in request_args:
+      sort_attrs = request_args['__sort'].split(",")
+      sort_desc = request_args.get('__sort_desc', 'false') == 'true'
       for sort_attr in sort_attrs:
         attr_desc = sort_desc
         if sort_attr.startswith('-'):
@@ -551,23 +563,23 @@ class ModelView(View):
     order_properties.append(model.id.desc())
     query = query.order_by(*order_properties)
 
-    if '__limit' in request.args:
+    if '__limit' in request_args:
       try:
-        limit = int(request.args['__limit'])
+        limit = int(request_args['__limit'])
         query = query.limit(limit)
       except (TypeError, ValueError):
         pass
 
     return query.distinct()
 
-  def get_object(self, id):
+  def get_object(self, id, request_args=ImmutableMultiDict()):
     # This could also use `self.pk`
     # .one() is required as long as any .eager_load() adds joins using
     #   'contains_eager()' to the core query, because 'LIMIT 1' breaks up
     #   that JOIN result (e.g. Categorizable)
     try:
-      return self.get_collection(filter_by_contexts=False)\
-          .filter(self.model.id == id).one()
+      query = self.get_collection(request_args, filter_by_contexts=False)
+      return query.filter(self.model.id == id).one()
     except sqlalchemy.orm.exc.NoResultFound:
       return None
 
@@ -727,8 +739,6 @@ class Resource(ModelView):
            and 'X-Requested-By' not in request.headers:
           raise BadRequest('X-Requested-By header is REQUIRED.')
 
-      model = self.model
-
       with benchmark("dispatch_request > Try"):
         try:
           if method == 'GET':
@@ -747,14 +757,14 @@ class Resource(ModelView):
                   if not permissions.is_allowed_read_for(obj):
                     raise Forbidden()
 
-                model = ggrc.models.inflector.get_model(kwargs[self.rel_name])
+                rel_model = get_model(kwargs[self.rel_name])
                 self._related_id = obj.id
 
-                return self.collection_get(model)
+                return self.collection_get(rel_model)
               else:
                 return self.get(*args, **kwargs)
             else:
-              return self.collection_get(model)
+              return self.collection_get(self.model)
           elif method == 'POST':
             if self.pk in kwargs and kwargs[self.pk] is not None:
               return self.post(*args, **kwargs)
@@ -788,7 +798,7 @@ class Resource(ModelView):
   def get(self, id):
     """Default JSON request handlers"""
     with benchmark("Query for object"):
-      obj = self.get_object(id)
+      obj = self.get_object(id, request.args)
     if obj is None:
       return self.not_found_response()
 
@@ -839,7 +849,7 @@ class Resource(ModelView):
 
   def put(self, id):
     with benchmark("Query for object"):
-      obj = self.get_object(id)
+      obj = self.get_object(id, request.args)
     if obj is None:
       return self.not_found_response()
     src = UnicodeSafeJsonWrapper(self.request.json)
@@ -885,7 +895,7 @@ class Resource(ModelView):
     with benchmark("Commit"):
       db.session.commit()
     with benchmark("Query for object"):
-      obj = self.get_object(id)
+      obj = self.get_object(id, request.args)
     with benchmark("Update index"):
       update_index(db.session, modified_objects)
     with benchmark("Update memcache after commit for collection PUT"):
@@ -912,7 +922,7 @@ class Resource(ModelView):
     task.start()
     try:
       with benchmark("Query for object"):
-        obj = self.get_object(id)
+        obj = self.get_object(id, request.args)
       if obj is None:
         return self.not_found_response()
       with benchmark("Query delete permissions"):
@@ -1021,7 +1031,8 @@ class Resource(ModelView):
       )
       matches_query = self.get_collection_matches(
           model=model,
-          filter_by_contexts=filter_by_contexts
+          request_args=request.args,
+          filter_by_contexts=filter_by_contexts,
       )
 
     # apply collection pagination
