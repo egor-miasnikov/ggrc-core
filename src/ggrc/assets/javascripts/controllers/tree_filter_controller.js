@@ -31,8 +31,8 @@ can.Control("GGRC.Controllers.TreeFilter", {
         .toggleClass("fa-check-circle green", is_expression);
       this.element.find('.filter-input span i')
         .toggleClass("fa-check-circle-o", !is_expression);
-  }
-  , apply_filter_without_request : function(filter_string){
+  },
+  apply_filter_without_request : function(filter_string){
       var current_filter = GGRC.query_parser.parse(filter_string),
           parent_control = this.element.closest('.cms_controllers_dashboard_widgets')
             .find(".cms_controllers_tree_view").control();
@@ -64,15 +64,15 @@ can.Control("GGRC.Controllers.TreeFilter", {
   },
   "input[type=submit] click": function (el, ev) {
     this.apply_filter();
-  }
-  , "input keyup" : function(el, ev) {
+  },
+  "input keyup" : function(el, ev) {
     this.toggle_indicator(GGRC.query_parser.parse(el.val()));
     if (ev.keyCode == 13){
       this.apply_filter();
     }
     ev.stopPropagation();
-  }
-  , "input, select change" : function(el, ev) {
+  },
+  "input, select change" : function(el, ev) {
 
     // this is left from the old filters and should eventually be replaced
     // Convert '.' to '__' ('.' will cause can.Observe to try to update a path instead of just a key)
