@@ -50,7 +50,6 @@ can.Control("GGRC.Controllers.TreeFilter", {
     parent.options.paging.attr('current', 1);
     parent.find();
   },
-
   apply_filter : function () {
     var value = this.element.find("input[type=text]")[0].value;
     if (GGRC.page_instance().type === 'Audit') {
@@ -59,7 +58,6 @@ can.Control("GGRC.Controllers.TreeFilter", {
       this.apply_filter_without_request(value);
     }
   },
-
   "input[type=reset] click": function (el, ev) {
     this.element.find("input[type=text]")[0].value = "";
     this.apply_filter();
@@ -67,7 +65,6 @@ can.Control("GGRC.Controllers.TreeFilter", {
   "input[type=submit] click": function (el, ev) {
     this.apply_filter();
   }
-
   , "input keyup" : function(el, ev) {
     this.toggle_indicator(GGRC.query_parser.parse(el.val()));
     if (ev.keyCode == 13){
@@ -75,7 +72,6 @@ can.Control("GGRC.Controllers.TreeFilter", {
     }
     ev.stopPropagation();
   }
-
   , "input, select change" : function(el, ev) {
 
     // this is left from the old filters and should eventually be replaced
