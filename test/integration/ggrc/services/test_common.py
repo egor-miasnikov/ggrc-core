@@ -7,6 +7,11 @@
 Test common REST API calls
 """
 
+# Disabling this pylint rule to be able to specify more descriptive test name:
+# e.g test_collection_get_pagination_default_page_size. So, that this rule will
+# note limit us to 30 chars.
+# pylint: disable=invalid-name
+
 import ggrc
 import ggrc.builder
 import ggrc.services

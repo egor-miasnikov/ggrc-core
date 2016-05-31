@@ -474,6 +474,7 @@ class ModelView(View):
 
   # Default model/DB helpers
   def get_collection(self, request_args, filter_by_contexts=True):
+    """Get collection filtered by request arguments"""
     if ('__stubs_only' not in request_args and
           hasattr(self.model, 'eager_query')):
       query = self.model.eager_query()
@@ -489,6 +490,10 @@ class ModelView(View):
 
   def filter_query_by_request(self, query, model, request_args,
                               filter_by_contexts=True, rel_model_id=None):  # noqa
+    """Filter query based on the request arguments and relation model id.
+
+    Used filter parameters: __search, __sort, __limit.
+    """
     joinlist = []
     if rel_model_id is not None:
       from ggrc.models.relationship_helper import RelationshipHelper
