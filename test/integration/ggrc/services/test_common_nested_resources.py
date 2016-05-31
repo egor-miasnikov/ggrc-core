@@ -116,6 +116,14 @@ class TestNestedResources(TestCase):
     self.object_generator.generate_relationship(outer, inner)
     return outer, inner
 
+  def make_outer(self, data=None):
+    """Create OuterModel instance"""
+    return self.object_generator.generate_object(OuterModel, data=data)[1]
+
+  def make_inner(self, data=None):
+    """Create InnerModel instance"""
+    return self.object_generator.generate_object(InnerModel, data=data)[1]
+
   def test_get(self):
     """Test get nested object collection"""
     outer, inner = self.make_outer_and_inner()
@@ -133,12 +141,12 @@ class TestNestedResources(TestCase):
 
   def test_get_multiple_results(self):
     """Test get nested object collection with several items"""
-    _, outer = self.object_generator.generate_object(OuterModel)
+    outer = self.make_outer()
 
     inner_objects_count = 5
     ids_titles = []
     for _ in range(inner_objects_count):
-      _, inner = self.object_generator.generate_object(InnerModel)
+      inner = self.make_inner()
       self.object_generator.generate_relationship(outer, inner)
       ids_titles.append((inner.id, inner.title))
 
@@ -162,7 +170,7 @@ class TestNestedResources(TestCase):
 
   def test_get_no_results(self):
     """Test get nested object collection with no items"""
-    _, outer = self.object_generator.generate_object(OuterModel)
+    outer = self.make_outer()
 
     response = self.client.get(
       self.mock_url(obj=outer, inner_class=InnerModel),
@@ -230,7 +238,7 @@ class TestNestedResources(TestCase):
     class InvalidInnerClassModel(object):
       __tablename__ = 'there_should_be_no_such_model'
 
-    _, outer = self.object_generator.generate_object(OuterModel)
+    outer = self.make_outer()
 
     response = self.client.get(
       self.mock_url(obj=outer,
@@ -260,28 +268,33 @@ class TestNestedResources(TestCase):
 
   def test_get_sort(self):
     """Check that sorting works with nested resources"""
-    objects = [self.object_generator.generate_object(OuterModel)[1]
-               for _ in range(10)]
-    titles = [obj.title for obj in objects]
+    outer = self.make_outer()
 
-    def check_sort_order(sort_parameters, expected_titles):
-      """Check that sorting with sort_parameters results in correct order"""
-      response = self.client.get('/api/{model}?{param}'
-                                 .format(model=OuterModel.__tablename__,
-                                         param=sort_parameters))
+    with model_registered(OuterModel), model_registered(InnerModel):
+      titles = []
+      for _ in range(10):
+        inner = self.make_inner()
+        self.object_generator.generate_relationship(outer, inner)
+        titles.append(inner.title)
 
-      resp_models, _ = self.parse_response(response, OuterModel)
-      resp_titles = [obj['title'] for obj in resp_models]
+      def check_sort_order(sort_parameters, expected_titles):
+        """Check that sorting with sort_parameters results in correct order"""
+        response = self.client.get('{url}?{param}'
+                                   .format(url=self.mock_url(outer, InnerModel),
+                                           param=sort_parameters))
 
-      self.assertListEqual(resp_titles, expected_titles)
+        resp_models, _ = self.parse_response(response, InnerModel)
+        resp_titles = [obj['title'] for obj in resp_models]
 
-    cases = (
-      ('__sort=title', sorted(titles)),
-      ('__sort=-title', sorted(titles, reverse=True)),
-      ('__sort=title&__sort_desc=false', sorted(titles)),
-      ('__sort=-title&__sort_desc=false', sorted(titles, reverse=True)),
-      ('__sort=title&__sort_desc=true', sorted(titles, reverse=True)),
-      ('__sort=-title&__sort_desc=true', sorted(titles)),
-    )
-    for sort_parameters, expected_titles in cases:
-      check_sort_order(sort_parameters, expected_titles)
+        self.assertListEqual(resp_titles, expected_titles)
+
+      cases = (
+        ('__sort=title', sorted(titles)),
+        ('__sort=-title', sorted(titles, reverse=True)),
+        ('__sort=title&__sort_desc=false', sorted(titles)),
+        ('__sort=-title&__sort_desc=false', sorted(titles, reverse=True)),
+        ('__sort=title&__sort_desc=true', sorted(titles, reverse=True)),
+        ('__sort=-title&__sort_desc=true', sorted(titles)),
+      )
+      for sort_parameters, expected_titles in cases:
+        check_sort_order(sort_parameters, expected_titles)
