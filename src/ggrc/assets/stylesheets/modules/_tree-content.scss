@@ -17,6 +17,10 @@ ul.new-tree {
     cursor: pointer;
     width: 60px;
     float: left;
+    .fa {
+      display: inline-block;
+      width: 20px;
+    }
     .dashboard & {
       width: auto;
       float: none;
