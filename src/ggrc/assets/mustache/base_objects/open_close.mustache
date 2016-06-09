@@ -4,20 +4,17 @@
     Created By: urban@reciprocitylabs.com
     Maintained By: urban@reciprocitylabs.com
 }}
-<div class="status-container">
-{{#if_instance_of instance "Cycle|CycleTaskGroup|CycleTaskGroupObjectTask"}}
+<div class="openclose">
+  {{#if_instance_of instance "Cycle|CycleTaskGroup|CycleTaskGroupObjectTask"}}
     <span class="status-label" {{addclass "status-" instance.status}} {{addclass "status-" instance.overdue}}></span>
-{{else}}
-  {{#if instance.workflow_state}}
-      <span class="status-label" {{addclass "status-" instance.workflow_state}}></span>
   {{else}}
+    {{#if instance.workflow_state}}
+      <span class="status-label" {{addclass "status-" instance.workflow_state}}></span>
+    {{else}}
       <span class="status-label"></span>
-  {{/if}}
-{{/if_instance_of}}
-</div>
+    {{/if}}
+  {{/if_instance_of}}
   {{#if draw_children}}
-  <div class="openclose">
       <i class="fa fa-caret-right"></i>
-  </div>
-{{/if}}
-
+  {{/if}}
+</div>

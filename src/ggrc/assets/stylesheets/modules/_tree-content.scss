@@ -13,10 +13,9 @@
 ul.new-tree {
   @extend %reset-list;
   margin-bottom: 40px;
-  .status-container,
   .openclose {
     cursor: pointer;
-    width: 30px;
+    width: 60px;
     float: left;
     .dashboard & {
       width: auto;
@@ -135,7 +134,6 @@ ul.new-tree {
             }
           }
         }
-        .status-container,
         .openclose,
         .select {
           padding: 6px 0;
@@ -376,7 +374,6 @@ ul.new-tree {
         .dashboard & {
           > .item-main {
             background: none;
-            > .status-container,
             > .openclose {
               > .item-wrap {
                 margin: 0;
@@ -387,7 +384,6 @@ ul.new-tree {
           &.item-open {
             margin-bottom: 20px;
             > .item-main {
-              > .status-container,
               > .openclose {
                 > .item-wrap {
                   border-color: transparent;
