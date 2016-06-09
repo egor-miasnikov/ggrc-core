@@ -132,6 +132,25 @@
     new GGRC.Mappings("ggrc_risks", mappings);
   };
 
+  var default_children_depth = 1;
+  function get_related_objects_child_options(depth) {
+    var related_objects_child_options = {
+      model: can.Model.Cacheable,
+      mapping: "related_objects",
+      show_view: GGRC.mustache_path + "/base_objects/tree.mustache",
+      footer_view: GGRC.mustache_path + "/base_objects/tree_footer.mustache",
+      add_item_view: GGRC.mustache_path + "/base_objects/tree_add_item.mustache",
+      draw_children: false
+    };
+    if (depth == 0) {
+      return related_objects_child_options;
+    }
+    return $.extend(related_objects_child_options, {
+      draw_children: true,
+      child_options: [get_related_objects_child_options(depth - 1)]
+    });
+  }
+
   // Override GGRC.extra_widget_descriptors and GGRC.extra_default_widgets
   // Initialize widgets for risk page
   RisksExtension.init_widgets = function init_widgets() {
@@ -157,7 +176,6 @@
       }
       model = CMS.Models[model_name];
       widgets_by_type[model_name] = widgets_by_type[model_name].concat(["Risk", "Threat"]);
-
       related_object_descriptors[model_name] = {
         content_controller: CMS.Controllers.TreeView,
         content_controller_selector: "ul",
@@ -167,8 +185,8 @@
         widget_icon: model.table_singular,
         content_controller_options: {
           add_item_view : GGRC.mustache_path + "/base_objects/tree_add_item.mustache",
-          child_options: [],
-          draw_children: false,
+          child_options: get_related_objects_child_options(1),
+          draw_children: true,
           parent_instance: page_instance,
           model: model,
           mapping: "related_" + model.table_plural,
@@ -183,8 +201,8 @@
       widget_name: CMS.Models.Threat.title_plural,
       widget_icon: CMS.Models.Threat.table_singular,
       content_controller_options: {
-        child_options: [],
-        draw_children: false,
+        child_options: get_related_objects_child_options(1),
+        draw_children: true,
         parent_instance: page_instance,
         model: CMS.Models.Threat,
         mapping: related_or_owned + CMS.Models.Threat.table_plural,
@@ -199,8 +217,8 @@
       widget_name: CMS.Models.Risk.title_plural,
       widget_icon: CMS.Models.Risk.table_singular,
       content_controller_options: {
-        child_options: [],
-        draw_children: false,
+        child_options: get_related_objects_child_options(1),
+        draw_children: true,
         parent_instance: page_instance,
         model: CMS.Models.Risk,
         mapping: related_or_owned + CMS.Models.Risk.table_plural,

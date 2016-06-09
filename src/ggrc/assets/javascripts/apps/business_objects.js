@@ -344,10 +344,12 @@
             draw_children: true
           },
           Document: {
-            mapping: "documents"
+            mapping: "documents",
+            child_options: related_objects_child_options
           },
           Person: {
-            mapping: "people"
+            mapping: "people",
+            child_options: related_objects_child_options
           },
           Program: {
             mapping: "programs",
@@ -395,10 +397,12 @@
             add_item_view: GGRC.mustache_path + "/directives/tree_add_item.mustache"
           },
           Control: {
-            mapping: "controls"
+            mapping: "controls",
+            child_options: related_objects_child_options
           },
           Objective: {
-            mapping: "objectives"
+            mapping: "objectives",
+            child_options: related_objects_child_options
           },
           Section: {
             mapping: "sections",
@@ -530,7 +534,7 @@
             child_options: related_objects_child_options,
             show_view: GGRC.mustache_path + "/audits/tree.mustache",
             footer_view: null
-          },
+          }
         },
         Clause: {
           _mixins: ['governance_objects', 'business_objects', 'extended_audits', 'issues'],
@@ -553,7 +557,8 @@
         Control: {
           _mixins: ['governance_objects', 'business_objects', 'extended_audits', 'issues'],
           Audit: {
-            mapping: 'related_audits'
+            mapping: 'related_audits',
+            child_options: related_objects_child_options
           }
         },
         Request: {
