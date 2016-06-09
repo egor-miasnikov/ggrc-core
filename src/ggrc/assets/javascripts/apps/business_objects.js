@@ -160,7 +160,7 @@
         return mappings;
       }
 
-      var default_children_depth = 1;
+      var default_children_depth = 2;
       function get_related_objects_child_options(depth) {
         var related_objects_child_options = {
           model: can.Model.Cacheable,
@@ -170,8 +170,13 @@
           add_item_view: GGRC.mustache_path + "/base_objects/tree_add_item.mustache",
           draw_children: false
         };
-        if (depth == 0) {
-          return related_objects_child_options;
+        if (depth === 0) {
+          return [];
+        }
+        if (depth === 1) {
+          return $.extend(related_objects_child_options, {
+            child_options: [get_related_objects_child_options(depth - 1)]
+          });
         }
         return $.extend(related_objects_child_options, {
           draw_children: true,
