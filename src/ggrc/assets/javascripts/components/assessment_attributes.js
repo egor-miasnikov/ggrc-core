@@ -153,7 +153,7 @@
         type: 'Dropdown',
         text: 'Type values separated by comma'
       }, {
-        type: 'Map:Person',
+        type: 'Person',
         text: ''  // not used
       }],
 

@@ -836,7 +836,7 @@ can.Control('GGRC.Controllers.Modals', {
         element.attr('checked', false);
       } else if (definition.attribute_type === 'Rich Text') {
         element.data("wysihtml5").editor.clear();
-      } else if (definition.attribute_type === 'Map:Person') {
+      } else if (definition.attribute_type === 'Person') {
         element = this.element.find('[name="_custom_attribute_mappings.' +
                                     definition.id + '.email"]');
         element.val('');

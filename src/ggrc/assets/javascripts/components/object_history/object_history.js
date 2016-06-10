@@ -357,7 +357,7 @@
         switch (def.attribute_type) {
           case 'Checkbox':
             return value.attribute_value ? '✓' : undefined;
-          case 'Map:Person':
+          case 'Person':
             obj = CMS.Models.Person.findInCacheById(value.attribute_object_id);
             if (obj === undefined) {
               return value.attribute_value;
