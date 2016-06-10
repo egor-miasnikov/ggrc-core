@@ -178,15 +178,13 @@
         var values = _.splitTrim(selected.values, {
           unique: true
         }).join(',');
-
-        ev.preventDefault();
-
-        // check if the attribute title is used already in the form
+        //check if the attribute title is used already in the form
         var isNotNewTitle = _.chain(fields)
-          .map(function(item) { return item.title })
+          .map(function(item) { return item.title; })
           .contains(selected.title)
           .value();
 
+        ev.preventDefault();
         if (!type || !title || isNotNewTitle ||
             (_.contains(scope.valueAttrs, type) && !values)) {
           return;
