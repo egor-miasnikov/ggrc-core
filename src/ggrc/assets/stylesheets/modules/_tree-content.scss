@@ -13,11 +13,11 @@
 ul.new-tree {
   @extend %reset-list;
   margin-bottom: 40px;
+  .openclose__empty,
   .openclose {
-    cursor: pointer;
-    width: 60px;
     float: left;
     .fa {
+      cursor: pointer;
       display: inline-block;
       width: 20px;
     }
@@ -26,6 +26,12 @@ ul.new-tree {
       float: none;
       clear: both;
     }
+  }
+  .openclose{
+    width: 55px;
+  }
+  .openclose__empty{
+    width: 35px;
   }
   .select {
     overflow: hidden;
