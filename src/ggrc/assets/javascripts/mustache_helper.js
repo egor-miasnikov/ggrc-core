@@ -1,6 +1,8 @@
 /*!
-    Copyright (C) 2016 Google Inc.
+    Copyright (C) 2013 Google Inc., authors, and contributors <see AUTHORS file>
     Licensed under http://www.apache.org/licenses/LICENSE-2.0 <see LICENSE file>
+    Created By: brad@reciprocitylabs.com
+    Maintained By: brad@reciprocitylabs.com
 */
 
 (function (namespace, $, can) {
@@ -824,66 +826,18 @@ Mustache.registerHelper("get_permalink_for_object", function (instance, options)
   return window.location.origin + instance.viewLink;
 });
 
-  Mustache.registerHelper('get_view_link', function (instance, options) {
-    function finish(link) {
-      return '<a href=' + link + ' target="_blank" class="view-link">' +
-             '  <i class="fa fa-long-arrow-right"></i>' +
-             '</a>';
-    }
-    instance = resolve_computed(instance);
-    if (!instance.viewLink && !instance.get_permalink) {
-      return '';
-    }
-    return defer_render('a', finish, instance.get_permalink());
-  });
-
-  /**
-   * Generate an anchor element that opens the instance's view page in a
-   * new browser tab/window.
-   *
-   * If the instance does not have such a page, an empty string is returned.
-   * The inner content of the tag is used as the text for the link.
-   *
-   * This helper is a modification of the `get_view_link` helper - the latter
-   * generates a link with an arrow icon instead of the text.
-   *
-   * Example usage:
-   *
-   *   {{{#view_object_link instance}}}
-   *     Open {{firstexist instance.name instance.title}}
-   *   {{{/view_object_link}}}
-   *
-   * NOTE: Since an HTML snippet is generated, the helper should be used with
-   * an unescaping block (tripple braces).
-   *
-   * @param {can.Model} instance - the object to generate the link for
-   * @param {Object} options - a CanJS options argument passed to every helper
-   * @return {String} - the link HTML snippet
-   */
-  Mustache.registerHelper('view_object_link', function (instance, options) {
-    var linkText;
-
-    function onRenderComplete(link) {
-      var html = [
-        '<a ',
-        '  href="' + link + '"',
-        '  target="_blank"',
-        '  class="view-link">',
-        linkText,
-        '</a>'
-      ].join('');
-      return html;
-    }
-
-    instance = resolve_computed(instance);
-    if (!instance.viewLink && !instance.get_permalink) {
-      return '';
-    }
-
-    linkText = options.fn(options.contexts);
-
-    return defer_render('a', onRenderComplete, instance.get_permalink());
-  });
+Mustache.registerHelper("get_view_link", function (instance, options) {
+  function finish(link) {
+    return "<a href=" + link + " target=\"_blank\" class=\"view-link\">" +
+           "  <i class=\"fa fa-long-arrow-right\"></i>" +
+           "</a>";
+  }
+  instance = resolve_computed(instance);
+  if (!instance.viewLink && !instance.get_permalink) {
+    return "";
+  }
+  return defer_render("a", finish, instance.get_permalink());
+});
 
 Mustache.registerHelper("schemed_url", function (url) {
   var domain, max_label, url_split;
@@ -1683,192 +1637,142 @@ Mustache.registerHelper("with_program_roles_as", function (
 });
 
 
-  var programRoles;  // needed for the infer_roles helper
+// Determines and serializes the roles for a user
+var program_roles;
+Mustache.registerHelper("infer_roles", function (instance, options) {
+  instance = resolve_computed(instance);
+  var state = options.contexts.attr("__infer_roles")
+    , page_instance = GGRC.page_instance()
+    , person = page_instance instanceof CMS.Models.Person ? page_instance : null
+    , init_state = function () {
+        if (!state.roles) {
+          state.attr({
+            status: 'loading'
+            , count: 0
+            , roles: new can.Observe.List()
+          });
+        }
+      }
+    ;
 
-  /**
-   * Determine and serialize the roles for a user.
-   *
-   * @param {can.Model} instance - the object to infer the current user's
-   *   roles for
-   * @param {Object} options - a CanJS options argument passed to every helper
-   */
-  Mustache.registerHelper('infer_roles', function (instance, options) {
-    var pageInstance;
-    var person;
-    var refreshQueue;
-    var requests;
-    var state;
+  if (!state) {
+    state = new can.Observe();
+    options.context.attr("__infer_roles", state);
+  }
 
-    function initState() {
-      if (!state.roles) {
-        state.attr({
-          status: 'loading',
-          count: 0,
-          roles: new can.Observe.List()
+  if (!state.attr('status')) {
+    if (person) {
+      init_state();
+
+      // Check whether current user is audit lead (for audits) or contact (for everything else)
+      if (instance.contact && instance.contact.id === person.id) {
+        if (instance instanceof CMS.Models.Audit) {
+          state.attr('roles').push('Audit Lead');
+        } else {
+          state.attr('roles').push('Contact');
+        }
+      }
+
+      // Check for Audit roles
+      if (instance instanceof CMS.Models.Audit) {
+        var requests = instance.requests || new can.Observe.List()
+          , refresh_queue = new RefreshQueue()
+          ;
+
+        refresh_queue.enqueue(requests.reify());
+        refresh_queue.trigger().then(function (requests) {
+          can.each(requests, function (request) {
+            if (request.assignee && request.assignee.id === person.id
+                && !~can.inArray('Request Assignee', state.attr('roles'))) {
+              state.attr('roles').push('Request Assignee');
+            };
+          });
         });
       }
-    }
 
-    instance = resolve_computed(instance);
+      // Check for assessor roles
+      if (instance.attr('principal_assessor') && instance.principal_assessor.id === person.id) {
+        state.attr('roles').push('Principal Assessor');
+      }
+      if (instance.attr('secondary_assessor') && instance.secondary_assessor.id === person.id) {
+        state.attr('roles').push('Secondary Assessor');
+      }
 
-    state = options.contexts.attr('__infer_roles');
-    pageInstance = GGRC.page_instance();
-    person = pageInstance instanceof CMS.Models.Person ? pageInstance : null;
+      // Check for people
+      if (instance.people && ~can.inArray(person.id, $.map(instance.people, function (person) { return person.id; }))) {
+        state.attr('roles').push('Mapped');
+      }
 
-    if (!state) {
-      state = new can.Observe();
-      options.context.attr('__infer_roles', state);
-    }
-
-    if (!state.attr('status')) {
-      if (person) {
-        initState();
-
-        // Check whether current user is audit lead (for audits) or contact (for everything else)
-        if (instance.contact && instance.contact.id === person.id) {
-          if (instance instanceof CMS.Models.Audit) {
-            state.attr('roles').push('Audit Lead');
-          } else {
-            state.attr('roles').push('Contact');
+      if (instance instanceof CMS.Models.Audit) {
+        $.when(
+          instance.reify().get_binding('authorizations').refresh_list(),
+          instance.findAuditors()
+        ).then(function (authorizations, auditors) {
+          if (~can.inArray(person.id, $.map(auditors, function (p) { return p.person.id; }))) {
+            state.attr('roles').push('Auditor');
           }
-        }
-
-        // Check for Audit roles
-        if (instance instanceof CMS.Models.Audit) {
-          requests = instance.requests || new can.Observe.List();
-          refreshQueue = new RefreshQueue();
-
-          refreshQueue.enqueue(requests.reify());
-          refreshQueue.trigger().then(function (requests) {
-            can.each(requests, function (request) {
-              if (
-                request.assignee &&
-                request.assignee.id === person.id &&
-                !_.includes(state.attr('roles'), 'Request Assignee')
-              ) {
-                state.attr('roles').push('Request Assignee');
+          authorizations.bind("change", function () {
+            state.attr('roles', can.map(state.attr('roles'), function (role) {
+              if (role != 'Auditor')
+                return role;
+            }));
+            instance.findAuditors().then(function (auds) {
+              if (~can.inArray(person.id, $.map(auds, function (p) { return p.person.id; }))) {
+                state.attr('roles').push('Auditor');
               }
             });
           });
-        }
+        });
+      }
 
-        // Check for assessor roles
-        if (
-          instance.attr('principal_assessor') &&
-          instance.principal_assessor.id === person.id
-        ) {
-          state.attr('roles').push('Principal Assessor');
-        }
+      // Check for ownership
+      if (instance.owners && ~can.inArray(person.id, $.map(instance.owners, function (person) { return person.id; }))) {// && !~can.inArray("Auditor", state.attr('roles'))) {
+        state.attr('roles').push('Owner');
+      }
 
-        if (
-          instance.attr('secondary_assessor') &&
-          instance.secondary_assessor.id === person.id
-        ) {
-          state.attr('roles').push('Secondary Assessor');
-        }
-
-        // Check for people
-        if (
-          instance.people &&
-          _.contains(_.map(instance.people, 'id'), person.id)
-        ) {
-          state.attr('roles').push('Mapped');
-        }
-
-        if (instance instanceof CMS.Models.Audit) {
-          $.when(
-            instance.reify().get_binding('authorizations').refresh_list(),
-            instance.findAuditors()
-          ).then(function (authorizations, auditors) {
-            if (_.includes(_.map(auditors, 'person.id'), person.id)) {
-              state.attr('roles').push('Auditor');
+      // Check for authorizations
+      if (instance instanceof CMS.Models.Program && instance.context && instance.context.id) {
+        person.get_list_loader("authorizations").done(function (authorizations) {
+          authorizations = can.map(authorizations, function (auth) {
+            if (auth.instance.context && auth.instance.context.id === instance.context.id) {
+              return auth.instance;
             }
-
-            function changeHandler() {
-              var roleList = can.map(state.attr('roles'), function (role) {
-                if (role !== 'Auditor') {
-                  return role;
-                }
-              });
-              state.attr('roles', roleList);
-
-              instance.findAuditors().then(function (auds) {
-                if (_.includes(_.map(auds, 'person.id'), person.id)) {
-                  state.attr('roles').push('Auditor');
-                }
-              });
-            }
-
-            authorizations.bind('change', changeHandler);
           });
-        }
-
-        // Check for ownership
-        if (
-          instance.owners &&
-          _.includes(_.map(instance.owners, 'id'), person.id)
-        ) {
-          state.attr('roles').push('Owner');
-        }
-
-        // Check for authorizations
-        if (
-          instance instanceof CMS.Models.Program &&
-          instance.context &&
-          instance.context.id
-        ) {
-          person.get_list_loader('authorizations')
-            .done(function (authorizations) {
-              authorizations = can.map(authorizations, function (auth) {
-                if (
-                  auth.instance.context &&
-                  auth.instance.context.id === instance.context.id
-                ) {
-                  return auth.instance;
-                }
-              });
-
-              if (!programRoles) {
-                programRoles = CMS.Models.Role.findAll(
-                  {scope__in: 'Private Program,Audit'}
-                );
+          !program_roles && (program_roles = CMS.Models.Role.findAll({ scope__in: "Private Program,Audit" }));
+          program_roles.done(function (roles) {
+            can.each(authorizations, function (auth) {
+              var role = CMS.Models.Role.findInCacheById(auth.role.id);
+              if (role) {
+                state.attr('roles').push(role.name);
               }
-
-              programRoles.done(function (roles) {
-                can.each(authorizations, function (auth) {
-                  var role = CMS.Models.Role.findInCacheById(auth.role.id);
-                  var roleName;
-                  if (role) {
-                    roleName = (role.name === 'ProgramOwner') ?
-                               'Program Manager' : role.name;
-                    state.attr('roles').push(roleName);
-                  }
-                });
-              });
-            }
-          );  // end person.get_list_loader()
-        }
-      } else if (  // When we're not on a profile page, check for ownership
-        instance.owners &&
-        _.includes(_.map(instance.owners, 'id'), GGRC.current_user.id)
-      ) {
-        initState();
+            });
+          });
+        });
+      }
+    }
+    // When we're not on a profile page
+    else {
+      // Check for ownership
+      if (instance.owners && ~can.inArray(GGRC.current_user.id, $.map(instance.owners, function (person) { return person.id; }))) {
+        init_state();
         state.attr('roles').push('Yours');
       }
     }
+  }
 
-    // Return the result
-    if (!state.attr('roles') || state.attr('status') === 'failed') {
-      return '';
-    } else if (
-      state.attr('roles').attr('length') === 0 &&
-      state.attr('status') === 'loading'
-    ) {
-      return options.inverse(options.contexts);
-    } else if (state.attr('roles').attr('length')) {
+  // Return the result
+  if (!state.attr('roles') || state.attr('status') === 'failed') {
+    return '';
+  }
+  else if (state.attr('roles').attr('length') === 0 && state.attr('status') === 'loading') {
+    return options.inverse(options.contexts);
+  }
+  else {
+    if (state.attr('roles').attr('length')) {
       return options.fn(options.contexts.add(state.attr('roles').join(', ')));
     }
-  });
+  }
+});
 
 function get_observe_context(scope) {
   if (!scope) return null;
@@ -2795,34 +2699,6 @@ Mustache.registerHelper("fadeout", function (delay, prop, options) {
   }
 });
 
-  Mustache.registerHelper('current_cycle_assignee',
-    function (instance, options) {
-      var mapping = instance.get_mapping('current_approval_cycles');
-      var approvalCycle;
-      var binding;
-      var finish;
-      var progress;
-
-      if (!mapping || !mapping.length) {
-        return options.inverse();
-      }
-      approvalCycle = mapping[0].instance;
-      binding = approvalCycle.get_binding('cycle_task_groups');
-
-      finish = function (tasks) {
-        return options.fn(options.contexts.add({
-          person: tasks[0].instance.contact
-        }));
-      };
-      progress = function () {
-        return options.inverse(options.contexts);
-      };
-
-      return defer_render('span', {
-        done: finish, progress: progress
-      }, binding.refresh_instances());
-    });
-
 Mustache.registerHelper("with_mapping_count", function (instance, mapping_names, options) {
   var args = can.makeArray(arguments)
     , options = args[args.length-1]  // FIXME duplicate declaration
@@ -3510,100 +3386,63 @@ Add spaces to a CamelCase string.
 Example:
 {{un_camel_case "InProgress"}} becomes "In Progress"
 */
-  Mustache.registerHelper('un_camel_case', function (str, toLowerCase) {
-    var value = Mustache.resolve(str);
-    toLowerCase = typeof toLowerCase !== 'object';
-    if (!value) {
-      return value;
+Mustache.registerHelper("un_camel_case", function (str, options) {
+  var val = Mustache.resolve(str);
+  if (!val || val == "") {
+    return val;
+  }
+  var newval = val[0];
+  for (var i=1; i<val.length; i++) {
+    if (val[i] == val[i].toUpperCase()) {
+      newval += " ";
     }
-    value = value.replace(/([A-Z]+)/g, ' $1').replace(/([A-Z][a-z])/g, ' $1');
-    return toLowerCase ? value.toLowerCase() : value;
+    newval += val[i];
+  }
+  return newval;
+});
+
+  Mustache.registerHelper("math", function (lvalue, operator, rvalue, options) {
+    lvalue = parseFloat(Mustache.resolve(lvalue));
+    rvalue = parseFloat(Mustache.resolve(rvalue));
+
+    return {
+      "+": lvalue + rvalue,
+      "-": lvalue - rvalue,
+      "*": lvalue * rvalue,
+      "/": lvalue / rvalue,
+      "%": lvalue % rvalue
+    }[operator];
   });
 
-  /**
-   * Check if the current user is allowed to edit a comment, and render the
-   * corresponding block in the template.
-   *
-   * Example usage:
-   *
-   *   {{#canEditComment commentInstance parentIntance}}
-   *     ... (display e.g. an edit button) ...
-   *   {{else}}
-   *     ... (no edit button) ...
-   *   {{/canEditComment}}
-   *
-   * @param {can.Model} comment - the Comment instance to check
-   * @param {can.Model} parentInstance - the object the comment was posted
-   *    under, e.g. an Assessment or a Request instance
-   * @param {Object} options - a CanJS options argument passed to every helper
-   *
-   */
-  Mustache.registerHelper('canEditComment',
-    function (comment, parentInstance, options) {
-      var END_STATES = Object.freeze({
-        Verified: true,
-        Completed: true
-      });
+  Mustache.registerHelper("page_info", function (current, size, total) {
+    var first;
+    var last;
+    current = parseFloat(Mustache.resolve(current));
+    size = parseFloat(Mustache.resolve(size));
+    total = parseFloat(Mustache.resolve(total));
 
-      var canEdit = true;
-      var isAdmin = Permission.is_allowed('__GGRC_ADMIN__');
+    first = (current - 1) * size + 1;
+    last = current * size < total ? current * size : total;
 
-      comment = Mustache.resolve(comment);
-      parentInstance = Mustache.resolve(parentInstance);
+    return last ? first + '-' + last + ' of ' + total + ' items' : 'No records';
+  });
 
-      if (!Permission.is_allowed_for('update', comment)) {
-        canEdit = false;
-      } else if (!isAdmin && parentInstance.status in END_STATES) {
-        // non-administrators cannot edit comments if the underlying object is
-        // in final or verfiied state
-        canEdit = false;
-      }
+  Mustache.registerHelper("page_placeholder", function (current, count) {
+    current = parseFloat(Mustache.resolve(current));
+    count = parseFloat(Mustache.resolve(count));
 
-      if (canEdit) {
-        return options.fn(options.context);
-      }
+    return count ? 'Page ' + current + ' of ' + count : '';
+  });
 
-      return options.inverse(options.context);
+  Mustache.registerHelper("if_assessment_instance", function (options) {
+    var instance = GGRC.page_instance();
+    var result;
+
+    if (instance.type === 'Audit' && this.model.shortName === 'Assessment') {
+      result = options.fn(options.contexts);
+    } else {
+      result = options.inverse(options.contexts);
     }
-  );
-
-  /**
-   * Check if Custom Atttribute's value did not pass validation, and render the
-   * corresponding block in the template. The error messages, if any, are
-   * available in the "error" variable within the "truthy" block.
-   *
-   * Example usage:
-   *
-   *   {{#ca_validation_error validationErrors customAttrId}}
-   *     Invalid value for the Custom Attribute {{customAttrId}}: {{errors.0}}
-   *   {{else}}
-   *     Hooray, no errors, a correct value is set!
-   *   {{/ca_validation_error}}
-   *
-   * @param {Object} validationErrors - an object containing validation results
-   *   of a can.Model instance
-   * @param {Number} customAttrId - ID of the Custom Attribute to check for
-   *   validation errors
-   * @param {Object} options - a CanJS options argument passed to every helper
-   */
-  Mustache.registerHelper(
-    'ca_validation_error',
-    function (validationErrors, customAttrId, options) {
-      var errors;
-      var contextStack;
-      var property;
-
-      validationErrors = Mustache.resolve(validationErrors) || {};
-      customAttrId = Mustache.resolve(customAttrId);
-
-      property = 'custom_attributes.' + customAttrId;
-      errors = validationErrors[property] || [];
-
-      if (errors.length > 0) {
-        contextStack = options.contexts.add({errors: errors});
-        return options.fn(contextStack);
-      }
-      return options.inverse(options.contexts);
-    }
-  );
+    return result;
+  });
 })(this, jQuery, can);

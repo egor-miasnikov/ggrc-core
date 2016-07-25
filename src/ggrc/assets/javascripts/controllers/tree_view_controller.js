@@ -1,6 +1,8 @@
 /*!
-    Copyright (C) 2016 Google Inc.
+    Copyright (C) 2013 Google Inc., authors, and contributors <see AUTHORS file>
     Licensed under http://www.apache.org/licenses/LICENSE-2.0 <see LICENSE file>
+    Created By: brad@reciprocitylabs.com
+    Maintained By: brad@reciprocitylabs.com
 */
 
 // require can.jquery-all
@@ -171,10 +173,12 @@ can.Control('CMS.Controllers.TreeLoader', {
 
     this._display_deferred = $.when(this._attached_deferred, this.prepare());
 
-    this._display_deferred = this._display_deferred.then(this._ifNotRemoved(function () {
-      return $.when(that.fetch_list(), that.init_view())
-        .then(that._ifNotRemoved(that.proxy('draw_list')));
-    })).done(tracker_stop);
+    this._display_deferred = this._display_deferred
+      .then(this._ifNotRemoved(function () {
+        return $.when(that.fetch_list(), that.init_view())
+          .then(that._ifNotRemoved(that.proxy('draw_list')))
+          .then(that.save_paging_info.bind(that));
+      })).done(tracker_stop);
 
     this._display_deferred.then(function (e) {
       if (!this._will_navigate()) {
@@ -185,7 +189,7 @@ can.Control('CMS.Controllers.TreeLoader', {
     return this._display_deferred;
   },
 
-  draw_list: function (list, is_reload, force_prepare_children) {
+  draw_list: function (list, is_reload, force_prepare_chilren) {
     var that = this;
     var refresh_queue = new RefreshQueue();
     var sort_function;
@@ -222,13 +226,20 @@ can.Control('CMS.Controllers.TreeLoader', {
     this.on();
 
     temp_list = [];
-    list.each(function (v) {
-      var item = that.prepare_child_options(v, force_prepare_children);
-      temp_list.push(item);
-      if (!is_reload && !item.instance.selfLink) {
-        refresh_queue.enqueue(v.instance);
-      }
-    });
+    if (!is_reload) {
+      list.each(function (v) {
+        var item = that.prepare_child_options(v, force_prepare_chilren);
+        temp_list.push(item);
+        if (!item.instance.selfLink) {
+          refresh_queue.enqueue(v.instance);
+        }
+      });
+    } else {
+      list.each(function (v) {
+        temp_list.push(v);
+      });
+    }
+
     if (this.options.sort_property || this.options.sort_function) {
       original_function = this.options.sort_function ||
                           this._sort_property_comparator(this.options.sort_property);
@@ -255,7 +266,7 @@ can.Control('CMS.Controllers.TreeLoader', {
         return o;
       }
     });
-    this._draw_list_deferred = this.enqueue_items(temp_list, is_reload, force_prepare_children);
+    this._draw_list_deferred = this.enqueue_items(temp_list, is_reload, force_prepare_chilren);
     return this._draw_list_deferred;
   },
 
@@ -292,7 +303,7 @@ can.Control('CMS.Controllers.TreeLoader', {
     };
   },
 
-  enqueue_items: function (items, is_reload, force_prepare_children) {
+  enqueue_items: function (items, is_reload, force_prepare_chilren) {
     var child_tree_display_list = [];
     var filtered_items = [];
     var i;
@@ -357,36 +368,26 @@ can.Control('CMS.Controllers.TreeLoader', {
       refreshed_deferred = new $.Deferred().resolve();
     }
     refreshed_deferred.then(function () {
-      that.insert_items(filtered_items, force_prepare_children);
+      that.insert_items(filtered_items, force_prepare_chilren);
       that._ifNotRemoved(that._loading_finished).call(that);
     });
     return this._loading_deferred;
   },
 
-  insert_items: function (items, force_prepare_children) {
+  insert_items: function (items, force_prepare_chilren) {
     var that = this;
-    var preppedItems = [];
-    var idMap = {};
-    var toInsert;
+    var prepped_items = [];
 
-    // Check the list of items to be inserted for any duplicate items.
-    can.each(this.options.list || [], function (item) {
-      idMap[item.instance.type + item.instance.id] = true;
-    });
-    toInsert = _.filter(items, function (item) {
-      return !idMap[item.instance.type + item.instance.id];
-    });
-
-    can.each(toInsert, function (item) {
-      var prepped = that.prepare_child_options(item, force_prepare_children);
+    can.each(items, function (item) {
+      var prepped = that.prepare_child_options(item, force_prepare_chilren);
       if (prepped.instance.selfLink) {
-        preppedItems.push(prepped);
+        prepped_items.push(prepped);
       }
     });
 
-    if (preppedItems.length > 0) {
-      this.options.list.push.apply(this.options.list, preppedItems);
-      this.add_child_lists(preppedItems);
+    if (prepped_items.length > 0) {
+      this.options.list.push.apply(this.options.list, prepped_items);
+      this.add_child_lists(prepped_items);
     }
   }
 });
@@ -402,7 +403,6 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     add_item_view: null,
     parent: null,
     list: null,
-    filteredList: [],
     single_object: false,
     find_params: {},
     sort_property: null,
@@ -411,6 +411,13 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     sort_function: null,
     sortable: true,
     filter: null,
+    paging: {
+      current: 1,
+      total: null,
+      page_size: 10,
+      count: null,
+      page_size_select: [10, 25, 50]
+    },
     start_expanded: false, // true
     draw_children: true,
     find_function: null,
@@ -423,6 +430,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     // { property: "controls", model: CMS.Models.Control, }
     // { parent_find_param: "system_id" ... }
     scroll_page_count: 0.5, // pages above and below viewport
+    scroll_page_count_for_pagination: 3, //temporary amount pages above and below viewport
     is_subtree: false
   },
   do_not_propagate: [
@@ -736,9 +744,9 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
 
     if (this.options.footer_view) {
       dfds.push(
-        can.view(this.options.footer_view, this.options,
+        can.view(this.options.footer_view, $.when(this.options)).then(
           this._ifNotRemoved(function (frag) {
-            this.element.append(frag);
+            this.element.after(frag);
           }.bind(this))
         ));
     }
@@ -860,6 +868,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     original._child_options_prepared = v;
     return v;
   },
+
   el_position: function (el) {
     var se = this.options.scroll_element;
     var se_o = se.offset().top;
@@ -900,33 +909,28 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     var pageCount;
     var mid;
     var pos;
-    var options = this.options;
-
-    if (options.disable_lazy_loading ||
-        !this.element ||
-        options.attr('drawingItems')) {
+    if (this.options.disable_lazy_loading || this.element === null) {
       return;
     }
     elPosition = this.el_position.bind(this);
-    children = options.attr('filteredList');
+    children = this.element.children();
     lo = 0;
     hi = children.length - 1;
     max = hi;
     steps = 0;
     visible = [];
-    toRender = [];
-
-    if (!children.length || !children[0].element) {
-      return;
-    }
-    alreadyVisible = _.filter(children, function (child) {
-      return !child.options.attr('isPlaceholder');
+    alreadyVisible = _.filter(this.element[0].children, function (e) {
+      // doing this manualy is 10x faster than a jQuery selector and performance
+      // here matters since it runs on every scroll event on a potentialy long
+      // list of items
+      return e.tagName === 'LI';
     });
+    toRender = [];
 
     while (steps < MAX_STEPS && lo < hi) {
       steps += 1;
       mid = (lo + hi) / 2 | 0;
-      pos = elPosition(children[mid].element);
+      pos = elPosition(children[mid]);
       if (pos < 0) {
         lo = mid;
         continue;
@@ -938,15 +942,21 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
       lo = mid;
       hi = mid;
     }
-    pageCount = options.scroll_page_count;
-    while (lo > 0 && elPosition(children[lo - 1].element) >= (-pageCount)) {
+    pageCount = this.options.scroll_page_count;
+
+    if(GGRC.page_instance().type === 'Audit' && this.options.model.shortName === 'Assessment'){
+      pageCount =  this.options.scroll_page_count_for_pagination;
+    }
+
+    while (lo > 0 && elPosition(children[lo - 1]) >= (-pageCount)) {
       lo -= 1;
     }
-    while (hi < max && elPosition(children[hi + 1].element) <= pageCount) {
+    while (hi < max && elPosition(children[hi + 1]) <= pageCount) {
       hi += 1;
     }
 
-    _.each(alreadyVisible, function (control) {
+    _.each(alreadyVisible, function (visible_element) {
+      control = $(visible_element).control();
       if (!control) {
         return;
       }
@@ -959,8 +969,8 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
 
     for (i = lo; i <= hi; i++) {
       index = this._is_scrolling_up ? (hi - (i - lo)) : i;
-      control = children[index];
-      if (!control) {
+      control = $(children[index]).control();
+      if (control === undefined || control === null) {
         // TODO this should not be necessary
         // draw_visible is called too soon when controlers are not yet
         // available and then again when they are. Remove the too soon
@@ -1057,6 +1067,17 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     }.bind(this)), 200);
   },
 
+  '{paging} change': _.debounce(
+    function (object, event, type, action, newVal, oldVal) {
+      if (oldVal !== newVal) {
+        if (type === 'current') {
+          this.refresh_page();
+        } else if (type === 'page_size') {
+          this.refresh_page();
+        }
+      }
+    }),
+
   '.tree-structure subtree_loaded': function (el, ev) {
     var instance_id;
     var parent;
@@ -1080,12 +1101,11 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     var listWindow = [];
     var finalDfd;
     var queue = [];
-    var BATCH = 200;
     var opId = this._add_child_lists_id = (this._add_child_lists_id || 0) + 1;
 
     can.each(currentList, function (item) {
       listWindow.push(item);
-      if (listWindow.length >= BATCH) {
+      if (listWindow.length >= 500) {
         queue.push(listWindow);
         listWindow = [];
       }
@@ -1094,7 +1114,6 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
       queue.push(listWindow);
     }
     this.options.attr('filter_shown', 0);
-    this.options.attr('filteredList', []);
     finalDfd = _.foldl(queue, function (dfd, listWindow) {
       return dfd.then(function () {
         var res = $.Deferred();
@@ -1129,56 +1148,75 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     return finalDfd;
   },
   draw_items: function (optionsList) {
-    var items;
     var $footer = this.element.children('.tree-item-add').first();
+    var $items = $();
+    var $existing = this.element.children('.cms_controllers_tree_view_node');
     var drawItemsDfds = [];
     var sortProp = this.options.sort_property;
-    var sortFunction = this.options.sort_function;
+    var sortFunction;
     var filter = this.options.filter;
-    var filteredItems = this.options.attr('filteredList') || [];
     var res;
+    var page = GGRC.page_instance();
 
-    items = can.makeArray(optionsList);
-    if (filter) {
-      items = _.filter(items, function (option) {
-        return filter.evaluate(option.instance.get_filter_vals());
-      });
+    // Temporary solutions for apply pagination on Assessments view
+    if (page.type !== 'Audit' &&
+      this.options.model.shortName !== 'Assessment') {
+      sortFunction = this.options.sort_function;
     }
+
+    optionsList = can.makeArray(optionsList);
+    can.map(optionsList, function (options) {
+      var $li = $('<li />');
+      if (!filter || filter.evaluate(options.instance.get_filter_vals())) {
+        if (this.options.disable_lazy_loading) {
+          options.disable_lazy_loading = true;
+        }
+        $li.cms_controllers_tree_view_node(options);
+        drawItemsDfds.push($li.control()._draw_node_deferred);
+        $items.push($li[0]);
+      }
+    }.bind(this));
 
     if (sortProp || sortFunction) {
       if (!sortFunction) {
         sortFunction = this._sort_property_comparator(sortProp);
       }
-      items.sort(function (a, b) {
-        return sortFunction(a.instance, b.instance);
-      });
-    }
+      $items.each(function (i, item) {
+        var j;
+        var $item = $(item);
+        var compare;
+        var newItem = $item.control().options.instance;
+        var oldItem;
 
-    items = _.map(items, function (options) {
-      var control;
-      var elem = document.createElement('li');
-      if (this.options.disable_lazy_loading) {
-        options.disable_lazy_loading = true;
+        for (j = $existing.length - 1; j >= 0; j--) {
+          oldItem = $existing.eq(j).control().options.instance;
+          compare = sortFunction(oldItem, newItem);
+          if (compare <= 0) {
+            $item.insertAfter($existing.eq(j));
+            $existing.splice(j + 1, 0, item);
+            return;
+          }
+        }
+        if ($existing.length) {
+          $item.insertBefore($existing.eq(0));
+        } else if ($footer.length) {
+          $item.insertBefore($footer);
+        } else {
+          $item.appendTo(this.element);
+        }
+        $existing.splice(0, 0, item);
+      }.bind(this));
+      if (this.options.sortable) {
+        $(this.element).sortable({element: 'li.tree-item', handle: '.drag'});
       }
-      control = new CMS.Controllers.TreeViewNode(elem, options);
-      drawItemsDfds.push(control._draw_node_deferred);
-      filteredItems.push(control);
-      return control.element;
-    }.bind(this));
-
-    if ($footer.length) {
-      $(items).insertBefore($footer);
+    } else if ($footer.length) {
+      $items.insertBefore($footer);
     } else {
-      this.element.append(items);
+      $items.appendTo(this.element);
     }
-    if (this.options.sortable) {
-      $(this.element).sortable({element: 'li.tree-item', handle: '.drag'});
-    }
-    this.options.attr('filteredList', filteredItems);
     res = $.when.apply($, drawItemsDfds);
-
     res.then(function () {
-      _.defer(this.draw_visible.bind(this));
+      setTimeout(this.draw_visible.bind(this), 0);
     }.bind(this));
     return res;
   },
@@ -1290,7 +1328,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
   },
 
   hide_filter: function () {
-    var $filter = this.element.parent().find('.tree-filter');
+    var $filter = this.element.parent().find('.filter-holder');
     var height = $filter.height();
     var margin = $filter.css('margin-bottom').replace('px', '');
 
@@ -1313,7 +1351,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
   },
 
   show_filter: function () {
-    var $filter = this.element.parent().find('.tree-filter');
+    var $filter = this.element.parent().find('.filter-holder');
 
     $filter
         .height($filter.data('height'))
@@ -1375,6 +1413,45 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
                  );
   },
 
+  _build_request_params: function () {
+    return {
+      page: this.options.paging.attr("current"),
+      page_size: this.options.paging.attr("page_size"),
+      search_value: this.options.paging.attr("filter"),
+      sort_direction: this.options.sort_direction === 'asc',
+      sort_by: this.options.sort_by
+    };
+  },
+  save_paging_info: function () {
+    var globalInfo = GGRC.page_object.paging;
+    var paging = this.options.paging;
+
+    if (globalInfo && globalInfo[this.options.model.shortName]) {
+      paging.attr('count', globalInfo[this.options.model.shortName].count);
+      paging.attr('total', globalInfo[this.options.model.shortName].total);
+    }
+  },
+
+  refresh_page: function () {
+    var self = this;
+
+    this.options.model.findAll(self._build_request_params())
+      .then(function (data) {
+        var real_add = [];
+        self.save_paging_info();
+        self.element.children('.cms_controllers_tree_view_node').remove();
+        can.each(data, function (newVal) {
+          var _newVal = newVal.instance ? newVal.instance : newVal;
+          if (self.oldList && ~can.inArray(_newVal, self.oldList)) {
+            self.oldList.splice(can.inArray(_newVal, self.oldList), 1);
+          } else if (self.element) {
+            real_add.push(newVal);
+          }
+        });
+        self.enqueue_items(real_add);
+      });
+  },
+
   sort: function (event) {
     var $el = $(event.currentTarget);
     var key = $el.data('field');
@@ -1382,6 +1459,7 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
     var order;
     var order_factor;
     var comparator;
+    var instance = GGRC.page_instance();
 
     if (key !== this.options.sort_by) {
       this.options.sort_direction = null;
@@ -1412,7 +1490,14 @@ CMS.Controllers.TreeLoader('CMS.Controllers.TreeView', {
 
     $el.addClass(order);
 
-    this.reload_list();
+    // Temporary solutions for apply pagination on Assessments view
+    if (instance.type === 'Audit' &&
+      this.options.model.shortName === 'Assessment') {
+      this.options.paging.attr("current", 1);
+      this.refresh_page();
+    } else {
+      this.reload_list();
+    }
   },
 
   set_tree_display_list: function (ev) {
@@ -1510,9 +1595,7 @@ can.Control('CMS.Controllers.TreeViewNode', {
         this.draw_placeholder();
       }
     }.bind(this), 0);
-
   },
-
   '{instance} change': function (inst, ev, prop) {
     if (prop === 'custom_attribute_values') {
       this.draw_node();
@@ -1537,6 +1620,7 @@ can.Control('CMS.Controllers.TreeViewNode', {
     }
 
     this._draw_node_in_progress = true;
+    this.add_child_lists_to_child();
 
     // the node's isActive state is not stored anywhere, thus we need to
     // determine it from the presemce of the corresponding CSS class
@@ -1555,24 +1639,20 @@ can.Control('CMS.Controllers.TreeViewNode', {
         this._draw_node_deferred.resolve();
       }.bind(this))
     );
-    this.options.attr('isPlaceholder', false);
+
     this._draw_node_in_progress = false;
     this.options.attr('is_subtree',
         this.element && this.element.closest('.inner-tree').length > 0);
   },
 
   draw_placeholder: function () {
-    can.view(
-      GGRC.mustache_path + '/base_objects/tree_placeholder.mustache',
-      this.options,
-      this._ifNotRemoved(function (frag) {
-        this.replace_element(frag);
-        this._draw_node_deferred.resolve();
-        this.options.expanded = false;
-        delete this._expand_deferred;
-      }.bind(this))
-    );
-    this.options.attr('isPlaceholder', true);
+    var that = this;
+    can.view(GGRC.mustache_path + '/base_objects/tree_placeholder.mustache', that.options, this._ifNotRemoved(function (frag) {
+      that.replace_element(frag);
+      that._draw_node_deferred.resolve();
+      that.expanded = false;
+      delete that._expand_deferred;
+    }));
   },
 
   should_draw_children: function () {
@@ -1585,20 +1665,17 @@ can.Control('CMS.Controllers.TreeViewNode', {
 
   // add all child options to one TreeViewOptions object
   add_child_lists_to_child: function () {
-    var originalChildList = this.options.child_options;
-    var newChildList = [];
+    var original_child_options = this.options.child_options;
+    var new_child_options = [];
 
-    if (this.options.attr('_added_child_list')) {
-      return;
-    }
     this.options.attr('child_options', new can.Observe.List());
 
-    if (originalChildList.length === null) {
-      originalChildList = [originalChildList];
+    if (original_child_options.length === null) {
+      original_child_options = [original_child_options];
     }
 
     if (this.should_draw_children()) {
-      can.each(originalChildList, function (data, i) {
+      can.each(original_child_options, function (data, i) {
         var options = new can.Observe();
         data.each(function (v, k) {
           options.attr(k, v);
@@ -1610,11 +1687,10 @@ can.Control('CMS.Controllers.TreeViewNode', {
           parent: this,
           parent_instance: this.options.instance
         });
-        newChildList.push(options);
+        new_child_options.push(options);
       }.bind(this));
 
-      this.options.attr('child_options', newChildList);
-      this.options.attr('_added_child_list', true);
+      this.options.attr('child_options', new_child_options);
     }
   },
 
@@ -1714,9 +1790,9 @@ can.Control('CMS.Controllers.TreeViewNode', {
    *   nodes have been loaded and displayed
    */
   expand: function () {
+    var that = this;
     var $el = this.element;
 
-    this.add_child_lists_to_child();
     if (this._expand_deferred && $el.find('.openclose').is('.active')) {
       // If we have already expanded and are currently still expanded, then
       // short-circuit the call. However, we still need to toggle `expanded`,
@@ -1730,13 +1806,12 @@ can.Control('CMS.Controllers.TreeViewNode', {
 
     this._expand_deferred = new $.Deferred();
     setTimeout(this._ifNotRemoved(function () {
-      this.display_subtrees()
-        .then(this._ifNotRemoved(function () {
-          this.element.trigger('subtree_loaded');
-          this.element.trigger('loaded');
-          this._expand_deferred.resolve();
-        }.bind(this)));
-    }.bind(this)), 0);
+      that.display_subtrees().then(that._ifNotRemoved(function () {
+        that.element.trigger('subtree_loaded');
+        that.element.trigger('loaded');
+        that._expand_deferred.resolve();
+      }));
+    }), 0);
     return this._expand_deferred;
   },
 

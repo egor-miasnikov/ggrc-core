@@ -67,6 +67,10 @@ event.listen(
 class MysqlIndexer(SqlIndexer):
   record_type = MysqlRecordProperty
 
+  # the fields in which a search will be performed if none provided
+  _default_search_fields_raw = ['title', 'name', 'email', 'notes',
+                                'description', 'slug']
+
   def _get_type_query(self, model_names, permission_type='read',
                       permission_model=None):
 
@@ -125,23 +129,56 @@ class MysqlIndexer(SqlIndexer):
         or_(*type_queries))
 
   def _get_filter_query(self, terms):
-    whitelist = or_(
-        # Because property values for custom attributes are
-        # `attribute_value_<id>`
-        MysqlRecordProperty.property.contains('attribute_value'),
-        MysqlRecordProperty.property.in_(
-            ['title', 'name', 'email', 'notes', 'description', 'slug'])
-    )
+    """Parse `__search` query terms, return an SqlAlchemy filtering clause.
+
+    Supported syntax:
+      <terms> ::= <value> |  # any indexed field contains `value`
+                  <field_name> = <value> |  # `field_name` value
+                                            # is exactly `value`
+                  <field_name> != <value>  # `field_name` value
+                                           # is not exactly `value`
+      <value> ::= <any sequence not containing = sign>
+      <field_name> ::= <indexed field name>
+    `field_name` should be equal to a name of an indexed field for the queried
+    type of object
+    """
+    # Note: This is an incomplete search syntax, much simpler than the
+    # documented functionality: ~, !~, <, >, compound clauses (AND, OR)
+    # are not implemented yet.
     if not terms:
-      return whitelist
-    elif terms:
-      return and_(whitelist, MysqlRecordProperty.content.contains(terms))
+      filters = self._default_search_fields()
+    elif '!=' in terms:
+      column_name, value = terms.split('!=', 1)
+      value = value.strip('"')
+      filters = and_(
+          self.record_type.property == column_name.strip().lower(),
+          self.record_type.content != value.strip().lower(),
+      )
+    elif '=' in terms:
+      column_name, value = terms.split('=', 1)
+      value = value.strip('"')
+      filters = and_(
+          self.record_type.property == column_name.strip().lower(),
+          self.record_type.content == value.strip().lower(),
+      )
+    else:
+      filters = and_(self._default_search_fields(),
+                     self.record_type.content.contains(terms))
 
     # FIXME: Temporary (slow) fix for words shorter than MySQL default limit
     # elif len(terms) < 4:
     #   return MysqlRecordProperty.content.contains(terms)
     # else:
     #   return MysqlRecordProperty.content.match(terms)
+    return filters
+
+  def _default_search_fields(self):
+    return or_(
+        # Because property values for custom attributes are
+        # `attribute_value_<id>`
+        self.record_type.property.contains('attribute_value'),
+        self.record_type.property.in_(self._default_search_fields_raw),
+    )
 
   def _get_type_select_column(self, model):
     mapper = model._sa_class_manager.mapper

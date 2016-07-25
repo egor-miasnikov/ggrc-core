@@ -1,0 +1,48 @@
+{{!
+    Copyright (C) 2015 Google Inc., authors, and contributors <see AUTHORS file>
+    Licensed under http://www.apache.org/licenses/LICENSE-2.0 <see LICENSE file>
+    Created By: Aliaksandr_Novik3@epam.com
+    Maintained By: Aliaksandr_Novik3@epam.com
+}}
+
+<div class="ggrc-pagination">
+    <div class="count">
+        <div class="dropdown count">
+            <h6 class="dropdown-toggle" data-toggle="dropdown">{{page_info paging.current paging.page_size paging.total}}</h6>
+            <div class="dropdown-menu">
+                <span>Items per page:</span>
+                <div class="btn-group">
+                    {{#paging.page_size_select}}
+                        <button class="btn {{#if_equals paging.page_size .}}active{{/if_equals}}" data-size="{{.}}">{{.}}</button>
+                    {{/paging.page_size_select}}
+                </div>
+            </div>
+        </div>
+    </div>
+    <ul class="pagination pull-right">
+        <li class="{{#if_equals paging.current 1}}disabled{{/if_equals}}">
+            <a href="javascript://" data-page="1">
+                <i class="fa fa-angle-double-left" aria-hidden="true"></i>
+            </a>
+        </li>
+        <li class="{{#if_equals paging.current 1}}disabled{{/if_equals}}">
+            <a href="javascript://" data-page="{{math paging.current "-" 1}}">
+                <i class="fa fa-angle-left" aria-hidden="true"></i>
+            </a>
+        </li>
+        <li>
+            <input type="text" name="page-number" class="input" placeholder="{{page_placeholder paging.current paging.count}}">
+        </li>
+        <li class="{{#if_equals paging.current paging.count}}disabled{{/if_equals}}">
+            <a href="javascript://" data-page="{{math paging.current "+" 1}}">
+                <i class="fa fa-angle-right" aria-hidden="true"></i>
+            </a>
+        </li>
+        <li class="{{#if_equals paging.current paging.count}}disabled{{/if_equals}}">
+            <a href="javascript://" data-page="{{paging.count}}">
+                <i class="fa fa-angle-double-right" aria-hidden="true"></i>
+            </a>
+        </li>
+    </ul>
+    <div class="clearfix"></div>
+</div>

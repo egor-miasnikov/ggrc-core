@@ -30,8 +30,8 @@ can.Control("GGRC.Controllers.TreeFilter", {
         .toggleClass("fa-check-circle green", is_expression);
       this.element.find('.tree-filter__expression-holder span i')
         .toggleClass("fa-check-circle-o", !is_expression);
-  }
-  , apply_filter : function(filter_string){
+  },
+  apply_filter_without_request : function(filter_string){
       var current_filter = GGRC.query_parser.parse(filter_string),
           parent_control = this.element.closest('.cms_controllers_dashboard_widgets')
             .find(".cms_controllers_tree_view").control();
@@ -40,27 +40,38 @@ can.Control("GGRC.Controllers.TreeFilter", {
       parent_control.options.attr('sort_function', current_filter.order_by.compare);
       parent_control.options.attr('filter', current_filter);
       parent_control.reload_list();
-  }
+  },
+  apply_filter_via_request: function (filter) {
+    var parent = this.element.closest('.cms_controllers_dashboard_widgets')
+      .find(".cms_controllers_tree_view").control();
 
-  , "input[type=reset] click" : function(el, ev) {
+    parent.options.paging.attr('filter', filter);
+    parent.options.paging.attr('current', 1);
+    parent.refresh_page();
+  },
+  apply_filter : function () {
+    var value = this.element.find("input[type=text]")[0].value;
+    if (GGRC.page_instance().type === 'Audit') {
+      this.apply_filter_via_request(value);
+    } else {
+      this.apply_filter_without_request(value);
+    }
+  },
+  "input[type=reset] click": function (el, ev) {
     this.element.find("input[type=text]")[0].value = "";
-    this.apply_filter("");
-  }
-
-  , "input[type=submit] click" : function(el, ev) {
-    this.apply_filter(this.element.find("input[type=text]")[0].value)
-  }
-
-  , "input keyup" : function(el, ev) {
+    this.apply_filter();
+  },
+  "input[type=submit] click": function (el, ev) {
+    this.apply_filter();
+  },
+  "input[name=filter_query] keyup" : function(el, ev) {
     this.toggle_indicator(GGRC.query_parser.parse(el.val()));
-
     if (ev.keyCode == 13){
-      this.apply_filter(el.val());
+      this.apply_filter();
     }
     ev.stopPropagation();
-  }
-
-  , "input, select change" : function(el, ev) {
+  },
+  "input, select change" : function(el, ev) {
 
     // this is left from the old filters and should eventually be replaced
     // Convert '.' to '__' ('.' will cause can.Observe to try to update a path instead of just a key)

@@ -1,6 +1,8 @@
 /*!
-    Copyright (C) 2016 Google Inc.
+    Copyright (C) 2013 Google Inc., authors, and contributors <see AUTHORS file>
     Licensed under http://www.apache.org/licenses/LICENSE-2.0 <see LICENSE file>
+    Created By: brad@reciprocitylabs.com
+    Maintained By: brad@reciprocitylabs.com
 */
 
 (function (can) {
@@ -67,7 +69,6 @@
     create: 'POST /api/audits',
     mixins: ['contactable', 'unique_title'],
     is_custom_attributable: true,
-    is_clonable: true,
     attributes: {
       context: 'CMS.Models.Context.stub',
       program: 'CMS.Models.Program.stub',
@@ -87,11 +88,9 @@
       status: 'Draft',
       object_type: 'Assessment'
     },
-    statuses: ['Planned', 'In Progress', 'Manager Review',
-      'Ready for External Review', 'Completed'],
     obj_nav_options: {
       show_all_tabs: false,
-      force_show_list: ['In Scope Controls', 'Requests',
+      force_show_list: ['In Scope Controls', 'Open Requests',
                         'Issues', 'Assessments']
     },
     tree_view_options: {
@@ -137,6 +136,11 @@
         mapping: 'related_owned_requests',
         allow_creating: true,
         parent_find_param: 'audit.id'
+      }, {
+        model: 'Request',
+        mapping: 'related_mapped_requests',
+        allow_creating: false,
+        parent_find_param: 'audit.id'
       }]
     },
     init: function () {
@@ -158,19 +162,15 @@
           }
         }
       );
+      // Preload auditor role:
+      CMS.Models.Role.findAll({
+        name__in: 'Auditor'
+      });
     }
   }, {
     object_model: can.compute(function () {
       return CMS.Models[this.attr('object_type')];
     }),
-    clone: function (options) {
-      var model = CMS.Models.Audit;
-      return new model({
-        operation: 'clone',
-        cloneOptions: options.cloneOptions,
-        context: this.context
-      });
-    },
     save: function () {
       // Make sure the context is always set to the parent program
       if (!this.context || !this.context.id) {
@@ -335,38 +335,8 @@
     }
   }, {
     form_preload: function (new_object_form) {
-      var page_instance = GGRC.page_instance();
-      this.attr('comment', page_instance);
-    },
-    /**
-     * Update the description of an instance. Mainly used as an event handler for
-     * updating Requests' and Audits' comments.
-     *
-     * @param {can.Map} instance - the (Comment) instance to update
-     * @param {jQuery.Element} $el - the source of the event `ev`
-     * @param {jQuery.Event} ev - the onUpdate event object
-     */
-    updateDescription: function (instance, $el, ev) {
-      var $body = $(document.body);
-
-      // for some reson the instance must be refreshed before saving to avoid
-      // the HTTP "precondition reqired" error
-      this.refresh()
-        .then(function () {
-          this.attr('description', ev.newVal);
-          return this.save();
-        }.bind(this))
-        .done(function () {
-          $body.trigger('ajax:flash', {
-            success: 'Saved.'
-          });
-        })
-        .fail(function () {
-          $body.trigger('ajax:flash', {
-            error: 'There was a problem with saving.'
-          });
-          this.attr('description', ev.oldVal);
-        }.bind(this));
+      var instance = GGRC.page_instance();
+      this.attr('comment', instance);
     }
   });
 
@@ -528,6 +498,8 @@
       this.validateNonBlank('title');
       this.validateNonBlank('end_date');
       this.validateNonBlank('start_date');
+      this.validatePresenceOf('validate_assignee');
+      this.validatePresenceOf('validate_requester');
       this.validatePresenceOf('audit');
 
       this.validate(['start_date', 'end_date'], function (newVal, prop) {
@@ -542,17 +514,11 @@
         }
       });
 
-      this.validate(
-        'validate_assignee',
+      this.validate(['validate_assignee', 'validate_requester'],
         function (newVal, prop) {
           if (!this.validate_assignee) {
             return 'You need to specify at least one assignee';
           }
-        }
-      );
-      this.validate(
-        'validate_requester',
-        function (newVal, prop) {
           if (!this.validate_requester) {
             return 'You need to specify at least one requester';
           }
@@ -583,30 +549,20 @@
       }
       return 'Request "' + out_name + '"';
     },
-    form_preload: function (new_object_form, object_params) {
+    form_preload: function (new_object_form) {
       var audit;
-      var auditId;
       var that = this;
       var assignees = {};
-      var current_user = CMS.Models.get_instance('Person',
-                                                 GGRC.current_user.id);
+      var current_user = CMS.Models.get_instance(GGRC.current_user);
       var contact;
 
       if (new_object_form) {
         // Current user should be Requester
         assignees[current_user.email] = 'Requester';
 
-        // auditId = the audit info from the request creation button ||
-        //           the audit from the current page if we are on audit page
-        if (_.exists(object_params, 'audit.id')) {
-          auditId = object_params.audit.id;
-        } else if (_.exists(GGRC, 'page_model.type') === 'Audit') {
-          auditId = GGRC.page_model.id;
-        }
-
-        if (auditId) {
+        if (_.exists(GGRC, 'page_model.type') === 'Audit') {
           this.attr('audit', {
-            id: auditId,
+            id: GGRC.page_model.id,
             type: 'Audit'
           });
         }
@@ -759,7 +715,25 @@
     root_object: 'assessment',
     root_collection: 'assessments',
     findOne: 'GET /api/assessments/{id}',
-    findAll: 'GET /api/assessments',
+    findAll: function (params) {
+      var url = '/api/assessments';
+      var instance = GGRC.page_instance();
+
+      // Temporary solutions for apply pagination on Assessments view
+      if (instance.type === 'Audit' && this.shortName === 'Assessment') {
+        url = instance.selfLink + '/assessments';
+        params = this._generate_pagination_request_params(params);
+      }
+
+      return $.ajax({
+        type: 'GET',
+        url: url,
+        data: params,
+        headers: {
+          Accept: 'application/json, text/javascript, */*; q=0.01'
+        }
+      }).promise();
+    },
     update: 'PUT /api/assessments/{id}',
     destroy: 'DELETE /api/assessments/{id}',
     create: 'POST /api/assessments',
@@ -798,10 +772,9 @@
     defaults: {
       status: 'Not Started'
     },
-    filter_keys: ['title', 'status', 'operationally', 'operational', 'design',
+    filter_keys: ['title', 'state', 'operationally', 'operational', 'design',
                   'finished_date', 'verified_date', 'verified'],
     filter_mappings: {
-      state: 'status',
       operational: 'operationally',
       'verified date': 'verified_date',
       'finished date': 'finished_date'
@@ -877,12 +850,6 @@
         show_view: GGRC.mustache_path + '/base_templates/urls.mustache'
       }
     },
-    confirmEditModal: {
-      title: 'Confirm moving Request to "In Progress"',
-      description: 'You are about to move request from ' +
-      '"{{status}}" to "In Progress" - are you sure about that?',
-      button: 'Confirm'
-    },
     assignable_list: [{
       type: 'creator',
       mapping: 'related_creators',
@@ -896,41 +863,51 @@
       mapping: 'related_verifiers',
       required: false
     }],
-    conflicts: [
-      ['assessor', 'verifier']
-    ],
-    conclusions: ['Effective', 'Ineffective', 'Needs improvement',
-      'Not Applicable'],
     init: function () {
       if (this._super) {
         this._super.apply(this, arguments);
       }
       this.validatePresenceOf('object');
-      this.validatePresenceOf('audit');
+      this.validatePresenceOf('validate_creator');
+      this.validatePresenceOf('validate_assessor');
       this.validateNonBlank('title');
 
-      this.validate(
-        'validate_creator',
+      this.validate(['validate_creator', 'validate_assessor'],
         function (newVal, prop) {
           if (!this.validate_creator) {
             return 'You need to specify at least one creator';
           }
-        }
-      );
-      this.validate(
-        'validate_assessor',
-        function (newVal, prop) {
           if (!this.validate_assessor) {
             return 'You need to specify at least one assessor';
           }
         }
       );
+    },
+    _generate_pagination_request_params: function (params) {
+      var query = {
+        __page: params.page || 1,
+        __page_size: params.page_size || 10,
+        __sort: params.sort_by || 'title,description_inline,name,email',
+        __sort_desc: params.sort_direction || false
+      };
+
+      if (params.sort_desc !== undefined) {
+        query.__sort_desc = params.sort_desc;
+      }
+
+      if (params.search_value !== undefined) {
+        query.__search = params.search_value;
+      }
+
+      query.__sort = query.__sort.replace(/\|/g, ',');
+
+      return query;
     }
   }, {
     form_preload: function (newObjectForm) {
       var pageInstance = GGRC.page_instance();
-      var currentUser = CMS.Models.get_instance('Person',
-        GGRC.current_user.id, GGRC.current_user);
+      var currentUser = CMS.Models.get_instance(GGRC.current_user);
+      this._set_recipients(this.attr('recipients'));
 
       if (!newObjectForm) {
         return;
@@ -960,17 +937,27 @@
         this._super.apply(this, arguments);
       }
     },
-    save: function () {
-      if (!this.attr('program')) {
-        this.attr('program', this.attr('audit.program'));
+    _set_recipients: function (recipients) {
+      var labels = ['Creator', 'Assessor', 'Verifier'];
+      if (recipients) {
+        _.each(labels, function (label) {
+          this.attr(label, _.includes(recipients, label));
+        }.bind(this));
       }
+    },
+    _get_recipients: function () {
+      var labels = ['Creator', 'Assessor', 'Verifier'];
+      return _.map(labels, function (label) {
+        return this.attr(label) ? label : '';
+      }.bind(this)).join(',');
+    },
+    save: function () {
+      this.attr('recipients', this._get_recipients());
+      this.attr('program', this.attr('audit.program'));
       return this._super.apply(this, arguments);
     },
     after_save: function () {
       this._set_mandatory_msgs();
-      if (this.audit && this.audit.selfLink) {
-        this.audit.refresh();
-      }
     },
     _set_mandatory_msgs: function () {
       var instance = this;
@@ -998,18 +985,14 @@
           instance.get_binding('all_documents').refresh_count(),
           rq.trigger()
       ).then(function (customAttrVals, commentCount, attachmentCount, rqRes) {
-        var values = instance.custom_attribute_values.reify();
-        var definitions = instance.custom_attribute_definitions.reify();
-
+        var values = _.map(instance.custom_attribute_values, function (cav) {
+          return cav.reify();
+        });
         commentCount = commentCount();
         attachmentCount = attachmentCount();
-        _.each(definitions, function (definition) {
-          var attr = _.result(_.find(values, function (cav) {
-            return cav.custom_attribute_id === definition.id;
-          }), 'attribute_value');
-
-          if (definition.mandatory &&
-            GGRC.Utils.isEmptyCA(attr, definition.attribute_type)) {
+        _.each(instance.custom_attribute_definitions, function (definition) {
+          var pred = {custom_attribute_id: definition.id};
+          if (definition.mandatory && !_.some(values, pred)) {
             needed.value.push(definition.title);
           }
         });
@@ -1017,14 +1000,10 @@
           var definition;
           var i;
           var mandatory;
-          definition = _.find(definitions, {
+          definition = _.find(instance.custom_attribute_definitions, {
             id: cav.custom_attribute_id
           });
-          if (!definition) {
-            console.warn('CAV id %d is not reified properly.', cav.id);
-          }
-          if (!definition ||
-              !definition.multi_choice_options ||
+          if (!definition.multi_choice_options ||
               !definition.multi_choice_mandatory) {
             return;
           }
@@ -1173,26 +1152,12 @@
     },
 
     /**
-     * Initialize the newly created object instance. Validate that its title is
-     * non-blank and its default assessors / verifiers lists are set if
-     * applicable.
+     * Initialize the newly created object instance. Essentially just validate
+     * that its title is non-blank.
      */
     init: function () {
       this._super.apply(this, arguments);
       this.validateNonBlank('title');
-
-      this.validateListNonBlank(
-        'assessorsList',
-        function () {
-          return this.attr('default_people.assessors') === 'other';
-        }
-      );
-      this.validateListNonBlank(
-        'verifiersList',
-        function () {
-          return this.attr('default_people.verifiers') === 'other';
-        }
-      );
     }
   }, {
     // the object types that are not relevant to the AssessmentTemplate,
@@ -1241,11 +1206,6 @@
       this.attr('default_people', this._packPeopleData());
 
       return this._super.apply(this, arguments);
-    },
-    after_save: function () {
-      if (this.audit) {
-        this.audit.reify().refresh('related_assessment_templates');
-      }
     },
 
     /**

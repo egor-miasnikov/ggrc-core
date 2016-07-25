@@ -1,5 +1,7 @@
-# Copyright (C) 2016 Google Inc.
+# Copyright (C) 2013 Google Inc., authors, and contributors <see AUTHORS file>
 # Licensed under http://www.apache.org/licenses/LICENSE-2.0 <see LICENSE file>
+# Created By: david@reciprocitylabs.com
+# Maintained By: david@reciprocitylabs.com
 
 
 """gGRC Collection REST services implementation. Common to all gGRC collection
@@ -7,6 +9,7 @@ resources.
 """
 
 import datetime
+import functools
 import hashlib
 import json
 import logging
@@ -21,7 +24,8 @@ from flask.views import View
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy.orm.exc
-from werkzeug.exceptions import BadRequest, Forbidden
+from werkzeug.datastructures import ImmutableMultiDict
+from werkzeug.exceptions import BadRequest, Forbidden, NotFound
 
 import ggrc.builder.json
 import ggrc.models
@@ -33,8 +37,9 @@ from ggrc.fulltext.recordbuilder import fts_record_for
 from ggrc.login import get_current_user_id, get_current_user
 from ggrc.models.cache import Cache
 from ggrc.models.event import Event
-from ggrc.models.revision import Revision
 from ggrc.models.exceptions import ValidationError, translate_message
+from ggrc.models.inflector import get_model
+from ggrc.models.revision import Revision
 from ggrc.rbac import permissions, context_query_filter
 from .attribute_query import AttributeQueryBuilder
 from ggrc.models.background_task import BackgroundTask, create_task
@@ -112,7 +117,7 @@ def get_related_keys_for_expiration(context, o):
 
 def set_ids_for_new_custom_attributes(objects, parent_obj):
   """
-  When we are creating custom attribute values and definitions for
+  When we are creating custom attribute values for
   POST requests, parent object ID is not yet defined. This is why we update
   custom attribute values at this point and set the correct attributable_id
 
@@ -125,19 +130,11 @@ def set_ids_for_new_custom_attributes(objects, parent_obj):
     None
   """
 
-  object_attrs = {
-      "CustomAttributeValue": "attributable_id",
-      "CustomAttributeDefinition": "definition_id"
-  }
-
+  from ggrc.models.custom_attribute_value import CustomAttributeValue
   for obj in objects:
-    if (obj.type not in object_attrs or
-            not hasattr(parent_obj, "PER_OBJECT_CUSTOM_ATTRIBUTABLE")):
+    if not isinstance(obj, CustomAttributeValue):
       continue
-
-    attr = object_attrs[obj.type]
-    setattr(obj, attr, parent_obj.id)
-
+    obj.attributable_id = parent_obj.id
     # Disable state updating so that a newly create object doesn't go straight
     # from Draft to Modified.
     if hasattr(obj, '_skip_os_state_update'):
@@ -359,11 +356,27 @@ def clear_permission_cache():
   cache.delete_multi(cached_keys_set)
 
 
+def _check_accept_header(func):
+  """Check the 'Accept' header and return 406 response if not present."""
+  @functools.wraps(func)
+  def wrapped(self, *args, **kwargs):  # pylint: disable=missing-docstring
+    if ('Accept' in self.request.headers and
+            'application/json' not in self.request.headers['Accept']):
+      return current_app.make_response(
+          ('application/json', 406, [('Content-Type', 'text/plain')])
+      )
+    return func(self, *args, **kwargs)
+
+  return wrapped
+
+
 class ModelView(View):
   DEFAULT_PAGE_SIZE = 20
   MAX_PAGE_SIZE = 100
   pk = 'id'
   pk_type = 'int'
+  rel_name = 'resources'
+  rel_type = 'string'
 
   _model = None
 
@@ -427,23 +440,29 @@ class ModelView(View):
 
   def get_match_columns(self, model):
     mapper = model._sa_class_manager.mapper
-    columns = []
-    columns.append(mapper.primary_key[0].label('id'))
-    # columns.append(model.id.label('id'))
-    columns.append(self._get_type_select_column(model).label('type'))
-    if hasattr(mapper.c, 'context_id'):
-      columns.append(mapper.c.context_id.label('context_id'))
-    if hasattr(mapper.c, 'updated_at'):
-      columns.append(mapper.c.updated_at.label('updated_at'))
-    # columns.append(self._get_polymorphic_column(model))
+    columns = [
+        mapper.primary_key[0].label('id'),
+        self._get_type_select_column(model).label('type'),
+    ]
+    for column_name in ('context_id', 'updated_at'):
+      if hasattr(mapper.c, column_name):
+        columns.append(getattr(mapper.c, column_name).label(column_name))
+
     return columns
 
-  def get_collection_matches(self, model, filter_by_contexts=True):
-    columns = self.get_match_columns(self.model)
-    query = db.session.query(*columns).filter(
-        self._get_type_where_clause(model))
+  def get_collection_matches(self, model, request_args,
+                             filter_by_contexts=True,
+                             rel_model_id=None):
+    columns = self.get_match_columns(model)
+    filter_clause = self._get_type_where_clause(model)
+    query = db.session.query(*columns).filter(filter_clause)
     return self.filter_query_by_request(
-        query, filter_by_contexts=filter_by_contexts)
+        query=query,
+        model=model,
+        rel_model_id=rel_model_id,
+        request_args=request_args,
+        filter_by_contexts=filter_by_contexts,
+    )
 
   def get_resource_match_query(self, model, id):
     columns = self.get_match_columns(model)
@@ -454,30 +473,51 @@ class ModelView(View):
     return query
 
   # Default model/DB helpers
-  def get_collection(self, filter_by_contexts=True):
-    if '__stubs_only' not in request.args and \
-       hasattr(self.model, 'eager_query'):
+  def get_collection(self, request_args, filter_by_contexts=True):
+    """Get collection filtered by request arguments"""
+    if ('__stubs_only' not in request_args and
+            hasattr(self.model, 'eager_query')):
       query = self.model.eager_query()
     else:
       query = db.session.query(self.model)
-    return self.filter_query_by_request(
-        query, filter_by_contexts=filter_by_contexts)
 
-  def filter_query_by_request(self, query, filter_by_contexts=True):  # noqa
+    return self.filter_query_by_request(
+        query=query,
+        model=self.model,
+        request_args=request_args,
+        filter_by_contexts=filter_by_contexts,
+    )
+
+  def filter_query_by_request(self, query, model, request_args,  # noqa: too long
+                              filter_by_contexts=True, rel_model_id=None):
+    """Filter query based on the request arguments and relation model id.
+
+    Used filter parameters: __search, __sort, __limit.
+    """
     joinlist = []
-    if request.args:
-      querybuilder = AttributeQueryBuilder(self.model)
-      filter_, joinlist, _ = querybuilder.collection_filters(request.args)
+    if rel_model_id is not None:
+      from ggrc.models.relationship_helper import RelationshipHelper
+      ids = RelationshipHelper.get_ids_related_to(
+          object_type=model.__name__,
+          related_type=self.model.__name__,
+          related_ids=[rel_model_id],
+      )
+      query = query.filter(model.id.in_(ids))
+
+    elif request_args:
+      query_builder = AttributeQueryBuilder(model)
+      filter_, joinlist, _ = query_builder.collection_filters(request_args)
       if filter_ is not None:
         for j in joinlist:
           query = query.join(j)
         query = query.filter(filter_)
+
     if filter_by_contexts:
-      contexts = permissions.read_contexts_for(self.model.__name__)
-      resources = permissions.read_resources_for(self.model.__name__)
-      filter_expr = context_query_filter(self.model.context_id, contexts)
+      contexts = permissions.read_contexts_for(model.__name__)
+      resources = permissions.read_resources_for(model.__name__)
+      filter_expr = context_query_filter(model.context_id, contexts)
       if resources:
-        filter_expr = or_(filter_expr, self.model.id.in_(resources))
+        filter_expr = or_(filter_expr, model.id.in_(resources))
       query = query.filter(filter_expr)
       for j in joinlist:
         j_class = j.property.mapper.class_
@@ -486,62 +526,66 @@ class ModelView(View):
         if j_contexts is not None:
           j_filter_expr = context_query_filter(j_class.context_id, j_contexts)
           if resources:
-            j_filter_expr = or_(j_filter_expr, self.model.id.in_(j_resources))
+            j_filter_expr = or_(j_filter_expr, model.id.in_(j_resources))
           query = query.filter(j_filter_expr)
         elif resources:
-          query = query.filter(self.model.id.in_(resources))
-    if '__search' in request.args:
-      terms = request.args['__search']
-      types = self._get_matching_types(self.model)
+          query = query.filter(model.id.in_(resources))
+
+    if '__search' in request_args:
+      terms = request_args['__search']
+      types = self._get_matching_types(model)
       indexer = get_indexer()
       models = indexer._get_grouped_types(types)
       search_query = indexer._get_type_query(models, 'read', None)
       search_query = and_(search_query, indexer._get_filter_query(terms))
       search_query = db.session.query(indexer.record_type.key).filter(
           search_query)
-      if '__mywork' in request.args:
+      if '__mywork' in request_args:
         search_query = indexer._add_owner_query(
             search_query, models, get_current_user_id())
       search_subquery = search_query.subquery()
-      query = query.filter(self.model.id.in_(search_subquery))
+      query = query.filter(model.id.in_(search_subquery))
+
     order_properties = []
-    if '__sort' in request.args:
-      sort_attrs = request.args['__sort'].split(",")
-      sort_desc = request.args.get('__sort_desc', False)
+    if '__sort' in request_args:
+      sort_attrs = request_args['__sort'].split(",")
+      sort_desc = request_args.get('__sort_desc', 'false') == 'true'
       for sort_attr in sort_attrs:
         attr_desc = sort_desc
         if sort_attr.startswith('-'):
           attr_desc = not sort_desc
           sort_attr = sort_attr[1:]
-        order_property = getattr(self.model, sort_attr, None)
-        if order_property and hasattr(order_property, 'desc'):
-          if attr_desc:
-            order_property = order_property.desc()
-          order_properties.append(order_property)
+        order_property = getattr(model, sort_attr, None)
+        if order_property is not None and hasattr(order_property, 'desc'):
+          order_properties.append(
+              order_property.desc() if attr_desc else order_property.asc()
+          )
         else:
           # Possibly throw an exception instead,
           # if sorting by invalid attribute?
           pass
-    order_properties.append(self.modified_attr.desc())
-    order_properties.append(self.model.id.desc())
+
+    order_properties.append(self.modified_at(model).desc())
+    order_properties.append(model.id.desc())
     query = query.order_by(*order_properties)
-    if '__limit' in request.args:
+
+    if '__limit' in request_args:
       try:
-        limit = int(request.args['__limit'])
+        limit = int(request_args['__limit'])
         query = query.limit(limit)
       except (TypeError, ValueError):
         pass
-    query = query.distinct()
-    return query
 
-  def get_object(self, id):
+    return query.distinct()
+
+  def get_object(self, id, request_args=ImmutableMultiDict()):
     # This could also use `self.pk`
     # .one() is required as long as any .eager_load() adds joins using
     #   'contains_eager()' to the core query, because 'LIMIT 1' breaks up
     #   that JOIN result (e.g. Categorizable)
     try:
-      return self.get_collection(filter_by_contexts=False)\
-          .filter(self.model.id == id).one()
+      query = self.get_collection(request_args, filter_by_contexts=False)
+      return query.filter(self.model.id == id).one()
     except sqlalchemy.orm.exc.NoResultFound:
       return None
 
@@ -551,14 +595,17 @@ class ModelView(View):
   def not_found_response(self):
     return current_app.make_response((self.not_found_message(), 404, []))
 
-  def collection_last_modified(self):
+  def collection_last_modified(self, model):
     """Calculate the last time a member of the collection was modified. This
     method relies on the fact that the collection table has an `updated_at` or
     other column with a relevant timestamp; services for models that don't have
     this field **MUST** override this method.
     """
-    result = db.session.query(
-        self.modified_attr).order_by(self.modified_attr.desc()).first()
+    result = (
+        db.session.query(
+            self.modified_at(model))
+        .order_by(self.modified_at(model).desc())
+        .first())
     if result is not None:
       return self.modified_at(result)
     return datetime.datetime.now()
@@ -608,6 +655,7 @@ class ModelView(View):
 # View base class for Views handling
 #   - /resources (GET, POST)
 #   - /resources/<pk:pk_type> (GET, PUT, POST, DELETE)
+#   - /resources/<pk:pk_type>/<rel_name:rel_type> (GET)
 class Resource(ModelView):
   """View base class for Views handling.  Will typically be registered with an
   application following a collection style for routes. Collection `GET` and
@@ -676,8 +724,8 @@ class Resource(ModelView):
       "Model DELETEd",
       """
       Indicates that a model object was DELETEd and will be removed from the
-      databse. The sender in the signal will be the model class of the DELETEd
-      resource. The followin garguments will be sent along with the signal:
+      database. The sender in the signal will be the model class of the DELETEd
+      resource. The following arguments will be sent along with the signal:
 
         :obj: The model instance removed.
         :service: The instance of Resource handling the DELETE request.
@@ -687,7 +735,7 @@ class Resource(ModelView):
       """
       Indicates that a model object was DELETEd and has been removed from the
       database. The sender in the signal will be the model class of the DELETEd
-      resource. The followin garguments will be sent along with the signal:
+      resource. The following arguments will be sent along with the signal:
 
         :obj: The model instance removed.
         :service: The instance of Resource handling the DELETE request.
@@ -705,9 +753,24 @@ class Resource(ModelView):
         try:
           if method == 'GET':
             if self.pk in kwargs and kwargs[self.pk] is not None:
-              return self.get(*args, **kwargs)
+              if self.rel_name in kwargs and kwargs[self.rel_name] is not None:
+                with benchmark("Query for object"):
+                  obj = self.get_object(kwargs[self.pk])
+                if obj is None:
+                  return self.not_found_response()
+
+                with benchmark("Query read permissions"):
+                  self.check_read_permission(self.model, obj)
+
+                rel_model = get_model(kwargs[self.rel_name])
+                if rel_model is None:
+                  raise NotFound()
+
+                return self.collection_get(rel_model, obj.id)
+              else:
+                return self.get(*args, **kwargs)
             else:
-              return self.collection_get()
+              return self.collection_get(self.model)
           elif method == 'POST':
             if self.pk in kwargs and kwargs[self.pk] is not None:
               return self.post(*args, **kwargs)
@@ -737,23 +800,27 @@ class Resource(ModelView):
   def post(*args, **kwargs):
     raise NotImplementedError()
 
+  def check_read_permission(self, model, obj):
+    """Check read permissions for GET resource by id request"""
+    if (not permissions.is_allowed_read(
+        self.model.__name__, obj.id, obj.context_id) and
+        not permissions.has_conditions(
+            'read', self.model.__name__)):
+      raise Forbidden()
+    if not permissions.is_allowed_read_for(obj):
+      raise Forbidden()
+
+  @_check_accept_header
   def get(self, id):
     """Default JSON request handlers"""
     with benchmark("Query for object"):
-      obj = self.get_object(id)
+      obj = self.get_object(id, request.args)
     if obj is None:
       return self.not_found_response()
-    if 'Accept' in self.request.headers and \
-       'application/json' not in self.request.headers['Accept']:
-      return current_app.make_response((
-          'application/json', 406, [('Content-Type', 'text/plain')]))
+
     with benchmark("Query read permissions"):
-      if not permissions.is_allowed_read(
-          self.model.__name__, obj.id, obj.context_id)\
-         and not permissions.has_conditions('read', self.model.__name__):
-        raise Forbidden()
-      if not permissions.is_allowed_read_for(obj):
-        raise Forbidden()
+      self.check_read_permission(self.model, obj)
+
     with benchmark("Serialize object"):
       object_for_json = self.object_for_json(obj)
 
@@ -793,7 +860,7 @@ class Resource(ModelView):
 
   def put(self, id):
     with benchmark("Query for object"):
-      obj = self.get_object(id)
+      obj = self.get_object(id, request.args)
     if obj is None:
       return self.not_found_response()
     src = UnicodeSafeJsonWrapper(self.request.json)
@@ -831,8 +898,6 @@ class Resource(ModelView):
       self.model_put.send(obj.__class__, obj=obj, src=src, service=self)
     with benchmark("Get modified objects"):
       modified_objects = get_modified_objects(db.session)
-    with benchmark("Update custom attribute values"):
-      set_ids_for_new_custom_attributes(modified_objects.new, obj)
     with benchmark("Log event"):
       log_event(db.session, obj)
     with benchmark("Update memcache before commit for collection PUT"):
@@ -841,7 +906,7 @@ class Resource(ModelView):
     with benchmark("Commit"):
       db.session.commit()
     with benchmark("Query for object"):
-      obj = self.get_object(id)
+      obj = self.get_object(id, request.args)
     with benchmark("Update index"):
       update_index(db.session, modified_objects)
     with benchmark("Update memcache after commit for collection PUT"):
@@ -868,7 +933,7 @@ class Resource(ModelView):
     task.start()
     try:
       with benchmark("Query for object"):
-        obj = self.get_object(id)
+        obj = self.get_object(id, request.args)
       if obj is None:
         return self.not_found_response()
       with benchmark("Query delete permissions"):
@@ -940,40 +1005,49 @@ class Resource(ModelView):
     }
     return matches, collection_extras
 
-  def get_matched_resources(self, matches):
-    cache_objs = {}
+  def get_matched_resources(self, model, matches):
+    objs_map = {}
     if self.has_cache():
       self.request.cache_manager = _get_cache_manager()
       with benchmark("Query cache for resources"):
-        cache_objs = self.get_resources_from_cache(matches)
-      database_matches = [m for m in matches if m not in cache_objs]
+        objs_map = self.get_resources_from_cache(matches)
+      database_matches = [m for m in matches if m not in objs_map]
     else:
       database_matches = matches
 
-    database_objs = {}
-    if len(database_matches) > 0:
-      database_objs = self.get_resources_from_database(matches)
+    cache_op = 'Hit' if objs_map else 'Miss'
+    if database_matches:
+      with benchmark("Query database for resources"):
+        database_objs = self.get_resources_from_database(model, matches)
+        objs_map.update(database_objs)
       if self.has_cache():
         with benchmark("Add resources to cache"):
           self.add_resources_to_cache(database_objs)
-    return cache_objs, database_objs
 
-  def collection_get(self):
-    with benchmark("dispatch_request > collection_get > Check headers"):
-      if 'Accept' in self.request.headers and \
-         'application/json' not in self.request.headers['Accept']:
-        return current_app.make_response((
-            'application/json', 406, [('Content-Type', 'text/plain')]))
+    # NOTE: This will keep the right objects order (same is for matches).
+    objs = [objs_map[m] for m in matches if m in objs_map]
+
+    return objs, cache_op
+
+  @_check_accept_header
+  def collection_get(self, model, rel_model_id=None):
+    """Get collection matches, apply search and sorting"""
     with benchmark("dispatch_request > collection_get > Collection matches"):
       # We skip querying by contexts for Creator role and relationship objects,
       # because it will filter out objects that the Creator can access.
       # We are doing a special permissions check for these objects
       # below in the filter_resource method.
       filter_by_contexts = not (
-          self.model.__name__ in ("Relationship", "Revision") and _is_creator()
+          model.__name__ in ("Relationship", "Revision") and _is_creator()
       )
       matches_query = self.get_collection_matches(
-          self.model, filter_by_contexts)
+          model=model,
+          rel_model_id=rel_model_id,
+          request_args=request.args,
+          filter_by_contexts=filter_by_contexts,
+      )
+
+    # apply collection pagination
     with benchmark("dispatch_request > collection_get > Query Data"):
       if '__page' in request.args or '__page_only' in request.args:
         with benchmark("Query matches with paging"):
@@ -982,6 +1056,8 @@ class Resource(ModelView):
         with benchmark("Query matches"):
           matches = matches_query.all()
           extras = {}
+
+    # get collection matched resources from cache and db
     with benchmark("dispatch_request > collection_get > Matched resources"):
       cache_op = None
       if '__stubs_only' in request.args:
@@ -989,20 +1065,15 @@ class Resource(ModelView):
             'id': m[0],
             'type': m[1],
             'href': utils.url_for(m[1], id=m[0]),
-            'context_id': m[2]
+            'context_id': m[2],
         } for m in matches]
-
       else:
-        cache_objs, database_objs = self.get_matched_resources(matches)
-        objs = {}
-        objs.update(cache_objs)
-        objs.update(database_objs)
-
-        objs = [objs[m] for m in matches if m in objs]
+        objs, cache_op = self.get_matched_resources(model=model,
+                                                    matches=matches)
         with benchmark("Filter resources based on permissions"):
           objs = filter_resource(objs)
 
-        cache_op = 'Hit' if len(cache_objs) > 0 else 'Miss'
+    # serialize collection and make response
     with benchmark("dispatch_request > collection_get > Create Response"):
       # Return custom fields specified via `__fields=id,title,description` etc.
       # TODO this can be optimized by filter_resource() not retrieving
@@ -1011,17 +1082,20 @@ class Resource(ModelView):
         custom_fields = request.args['__fields'].split(',')
         objs = [{f: o[f] for f in custom_fields if f in o} for o in objs]
       with benchmark("Serialize collection"):
-        collection = self.build_collection_representation(
-            objs, extras=extras)
+        collection = self.build_collection_representation(objs, model=model,
+                                                          extras=extras)
 
-      if 'If-None-Match' in self.request.headers and \
-         self.request.headers['If-None-Match'] == etag(collection):
+      if ('If-None-Match' in self.request.headers and
+              self.request.headers['If-None-Match'] == etag(collection)):
         return current_app.make_response((
             '', 304, [('Etag', etag(collection))]))
 
       with benchmark("Make response"):
         return self.json_success_response(
-            collection, self.collection_last_modified(), cache_op=cache_op)
+            response_object=collection,
+            last_modified=self.collection_last_modified(model),
+            cache_op=cache_op,
+        )
 
   def get_resources_from_cache(self, matches):
     """Get resources from cache for specified matches"""
@@ -1090,31 +1164,6 @@ class Resource(ModelView):
     """Do NOTHING by default"""
     pass
 
-  def _check_contexts_for_post(self, src):
-    if (src.get('private') is True and
-            self.get_context_id_from_json(src) is not None):
-      raise BadRequest(
-          'context MUST be "null" when creating a private resource.')
-    elif 'context' not in src:
-      raise BadRequest('context MUST be specified.')
-
-  def _try_recover_integrity_error(self, obj, error):
-    """Recover and complete the request if possible, return new response.
-
-    Returns (code, object) if recover possible, None elsewise.
-    """
-    msg = error.orig.args[1]
-    if (obj.type == "Relationship" and
-            msg.startswith("Duplicate entry") and
-            msg.endswith("'uq_relationships'")):
-      db.session.rollback()
-      # just append the new attrs values
-      obj = obj.__class__.update_attributes(obj.source, obj.destination,
-                                            obj.attrs)
-      db.session.flush()
-      object_for_json = self.object_for_json(obj)
-      return (200, object_for_json)
-
   def collection_post_step(self, src, no_result):
     try:
       obj = self.model()
@@ -1130,7 +1179,12 @@ class Resource(ModelView):
             self.get_context_id_from_json(src))\
            and not permissions.has_conditions('create', self.model.__name__):
           raise Forbidden()
-      self._check_contexts_for_post(src)
+      if src.get('private') is True and src.get('context') is not None \
+         and src['context'].get('id') is not None:
+        raise BadRequest(
+            'context MUST be "null" when creating a private resource.')
+      elif 'context' not in src:
+        raise BadRequest('context MUST be specified.')
 
       with benchmark("Deserialize object"):
         self.json_create(obj, src)
@@ -1142,7 +1196,7 @@ class Resource(ModelView):
           raise Forbidden()
       with benchmark("Send model POSTed event"):
         self.model_posted.send(obj.__class__, obj=obj, src=src, service=self)
-      obj.modified_by = get_current_user()
+      obj.modified_by_id = get_current_user_id()
       db.session.add(obj)
       with benchmark("Get modified objects"):
         modified_objects = get_modified_objects(db.session)
@@ -1162,109 +1216,101 @@ class Resource(ModelView):
       with benchmark("Send model POSTed - after commit event"):
         self.model_posted_after_commit.send(obj.__class__, obj=obj,
                                             src=src, service=self)
-      # Note: In model_posted_after_commit necessary mapping and relashionships
-      # are set, so need to commit the changes
-      db.session.commit()
-
       with benchmark("Serialize object"):
         object_for_json = {} if no_result else self.object_for_json(obj)
       with benchmark("Make response"):
         return (201, object_for_json)
-    except IntegrityError as e:
-      response_after_recover = self._try_recover_integrity_error(obj, e)
-      if response_after_recover:
-        return response_after_recover
-      else:
-        return self._make_error_from_exception(e)
-    except ValidationError as e:
-      return self._make_error_from_exception(e)
-
-  @staticmethod
-  def _make_error_from_exception(exc):
-    """Return a 403-code with the exception message."""
-    message = translate_message(exc)
-    current_app.logger.warn(message)
-    return (403, message)
+    except (IntegrityError, ValidationError) as e:
+      msg = e.orig.args[1]
+      if obj.type == "Relationship" and \
+         msg.startswith("Duplicate entry") and \
+         msg.endswith("'uq_relationships'"):
+        db.session.rollback()
+        obj = obj.__class__.update_attributes(obj.source, obj.destination,
+                                              obj.attrs)
+        db.session.flush()
+        object_for_json = self.object_for_json(obj)
+        return (200, object_for_json)
+      message = translate_message(e)
+      current_app.logger.warn(message)
+      return (403, message)
 
   def collection_post(self):  # noqa
-    with benchmark("collection post"):
-      if self.request.mimetype != 'application/json':
-        return current_app.make_response((
-            'Content-Type must be application/json', 415, []))
+    if self.request.mimetype != 'application/json':
+      return current_app.make_response((
+          'Content-Type must be application/json', 415, []))
 
-      running_async = False
-      if 'X-GGRC-BackgroundTask' in request.headers:
-        if 'X-Appengine-Taskname' not in request.headers:
-          task = create_task(request.method, request.full_path,
-                             None, request.data)
-          if getattr(settings, 'APP_ENGINE', False):
-            return self.json_success_response(
-                self.object_for_json(task, 'background_task'),
-                self.modified_at(task))
-          body = self.request.json
-        else:
-          task_id = int(self.request.headers.get('x-task-id'))
-          task = BackgroundTask.query.get(task_id)
-          body = json.loads(task.parameters)
-          running_async = True
-        task.start()
-        no_result = True
-      else:
+    running_async = False
+    if 'X-GGRC-BackgroundTask' in request.headers:
+      if 'X-Appengine-Taskname' not in request.headers:
+        task = create_task(request.method, request.full_path,
+                           None, request.data)
+        if getattr(settings, 'APP_ENGINE', False):
+          return self.json_success_response(
+              self.object_for_json(task, 'background_task'),
+              self.modified_at(task))
         body = self.request.json
-        no_result = False
-      wrap = isinstance(body, dict)
-      if wrap:
-        body = [body]
-      res = []
-      with benchmark("collection post > body loop: {}".format(len(body))):
-        for src in body:
-          try:
-            src_res = None
-            src_res = self.collection_post_step(
-                UnicodeSafeJsonWrapper(src), no_result)
-            db.session.commit()
-            if running_async:
-              time.sleep(settings.BACKGROUND_COLLECTION_POST_SLEEP)
-          except Exception as e:
-            if not src_res or 200 <= src_res[0] < 300:
-              src_res = (getattr(e, "code", 500), e.message)
-            current_app.logger.warn("Collection POST commit failed:")
-            current_app.logger.exception(e)
-            db.session.rollback()
-          res.append(src_res)
-      with benchmark("collection post > calculate response statuses"):
-        headers = {"Content-Type": "application/json"}
-        errors = []
-        if wrap:
-          status, res = res[0]
-          if isinstance(res, dict) and len(res) == 1:
-            value = res.values()[0]
-            if "id" in value:
-              headers['Location'] = self.url_for(id=value["id"])
-        else:
-          for res_status, body in res:
-            if not 200 <= res_status < 300:
-              errors.append((res_status, body))
-          if len(errors) > 0:
-            status = errors[0][0]
-            headers[
-                "X-Flash-Error"] = ' || '.join((error for _, error in errors))
-          else:
-            status = 200
-      with benchmark("collection post > make response"):
-        result = current_app.make_response(
-            (self.as_json(res), status, headers))
+      else:
+        task_id = int(self.request.headers.get('x-task-id'))
+        task = BackgroundTask.query.get(task_id)
+        body = json.loads(task.parameters)
+        running_async = True
+      task.start()
+      no_result = True
+    else:
+      body = self.request.json
+      no_result = False
+    wrap = isinstance(body, dict)
+    if wrap:
+      body = [body]
+    res = []
+    for src in body:
+      try:
+        src_res = None
+        src_res = self.collection_post_step(
+            UnicodeSafeJsonWrapper(src), no_result)
+        db.session.commit()
+        if running_async:
+          time.sleep(settings.BACKGROUND_COLLECTION_POST_SLEEP)
+      except Exception as e:
+        if not src_res or 200 <= src_res[0] < 300:
+          src_res = (getattr(e, "code", 500), e.message)
+        current_app.logger.warn("Collection POST commit failed:")
+        current_app.logger.exception(e)
+        db.session.rollback()
+      res.append(src_res)
+    headers = {"Content-Type": "application/json"}
+    errors = []
+    if wrap:
+      status, res = res[0]
+      if isinstance(res, dict) and len(res) == 1:
+        value = res.values()[0]
+        if "id" in value:
+          headers['Location'] = self.url_for(id=value["id"])
+    else:
+      for res_status, body in res:
+        if not 200 <= res_status < 300:
+          errors.append((res_status, body))
+      if len(errors) > 0:
+        status = errors[0][0]
+        headers["X-Flash-Error"] = ' || '.join((error for _, error in errors))
+      else:
+        status = 200
+    result = current_app.make_response(
+        (self.as_json(res), status, headers))
 
-      with benchmark("collection post > return resullt"):
-        if 'X-GGRC-BackgroundTask' in request.headers:
-          if status == 200:
-            task.finish("Success", result)
-          else:
-            task.finish("Failure", result)
-        return result
+    if 'X-GGRC-BackgroundTask' in request.headers:
+      if status == 200:
+        task.finish("Success", result)
+      else:
+        task.finish("Failure", result)
+    return result
 
   @classmethod
   def add_to(cls, app, url, model_class=None, decorators=()):
+    """Attach views to the application like a regular function by either
+       using route decorator
+    """
     if model_class:
       service_class = type(model_class.__name__, (cls,), {
           '_model': model_class,
@@ -1275,15 +1321,27 @@ class Resource(ModelView):
       service_class = cls
     view_func = service_class.as_view(service_class.endpoint_name())
     view_func = cls.decorate_view_func(view_func, decorators)
+
+    def fmt(**kwargs):
+      return '<{type}:{value}>'.format(**kwargs)
+    single_res = fmt(type=cls.pk_type, value=cls.pk)
+    nested_res = fmt(type=cls.rel_type, value=cls.rel_name)
+
     app.add_url_rule(
         url,
         defaults={cls.pk: None},
         view_func=view_func,
         methods=['GET', 'POST'])
     app.add_url_rule(
-        '{url}/<{type}:{pk}>'.format(url=url, type=cls.pk_type, pk=cls.pk),
+        '{url}/{single_res}'.format(url=url, single_res=single_res),
         view_func=view_func,
         methods=['GET', 'PUT', 'DELETE'])
+    app.add_url_rule(
+        '{url}/{single_res}/{resources}'.format(url=url,
+                                                single_res=single_res,
+                                                resources=nested_res),
+        view_func=view_func,
+        methods=['GET'])
 
   # Response helpers
   @classmethod
@@ -1335,25 +1393,19 @@ class Resource(ModelView):
     paging_obj['total'] = paging.total
     return paging_obj
 
-  def get_resources_from_database(self, matches):
-    # FIXME: This is cheating -- `matches` should be allowed to be any model
-    model = self.model
+  def get_resources_from_database(self, model, matches):
     ids = {m[0]: m for m in matches}
-    with benchmark("Query database for matches"):
-      query = model.eager_query()
-      # We force the query here so that we can benchmark it
-      objs = query.filter(model.id.in_(ids.keys())).all()
-    with benchmark("Publish objects"):
-      resources = {}
-      includes = self.get_properties_to_include(request.args.get('__include'))
-      for obj in objs:
-        resources[ids[obj.id]] = ggrc.builder.json.publish(obj, includes)
-    with benchmark("Publish representation"):
-      ggrc.builder.json.publish_representation(resources)
+    query = model.eager_query()
+    objs = query.filter(model.id.in_(ids.keys()))
+    resources = {}
+    includes = self.get_properties_to_include(request.args.get('__include'))
+    for obj in objs:
+      resources[ids[obj.id]] = ggrc.builder.json.publish(obj, includes)
+    ggrc.builder.json.publish_representation(resources)
     return resources
 
-  def build_collection_representation(self, objs, extras=None):
-    table_plural = self.model._inflector.table_plural
+  def build_collection_representation(self, objs, model, extras=None):
+    table_plural = model._inflector.table_plural
     collection_name = '{0}_collection'.format(table_plural)
     resource = {
         collection_name: {
@@ -1407,7 +1459,6 @@ class Resource(ModelView):
 
 
 class ReadOnlyResource(Resource):
-
   def dispatch_request(self, *args, **kwargs):
     method = request.method
 

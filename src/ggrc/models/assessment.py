@@ -105,6 +105,13 @@ class Assessment(statusable.Statusable, AuditRelationship,
   ])
 
   # REST properties
+
+  # Enable fulltext indexing for all possible fields
+  _fulltext_attrs = ['title', 'slug', 'status', 'verified_date',
+                     'contact.name', 'secondary_contact.name', 'updated_at',
+                     'design', 'operationally', 'finished_date', 'url',
+                     'reference_url']
+
   _publish_attrs = [
       'design',
       'operationally',
