@@ -3,7 +3,7 @@
     Licensed under http://www.apache.org/licenses/LICENSE-2.0 <see LICENSE file>
 */
 
-(function (namespace, $, can) {
+(function (namespace, $, can, _) {
 
 //chrome likes to cache AJAX requests for Mustaches.
 var mustache_urls = {};
@@ -2070,25 +2070,24 @@ Mustache.registerHelper("with_review_task", function (options) {
   return options.fn(options.contexts.add({review_task: undefined}));
 });
 
-Mustache.registerHelper("default_audit_title", function (instance, options) {
-  var index,
-      program,
-      default_title,
-      current_title,
-      title;
+Mustache.registerHelper('default_audit_title', function (instance) {
+  var program;
+  var defaultTitle;
+  var title;
+  var params;
 
   instance = Mustache.resolve(instance);
-  program = instance.attr("program");
+  program = instance.attr('program');
 
   if (!instance._transient) {
-    instance.attr("_transient", new can.Observe({}));
+    instance.attr('_transient', new can.Observe({}));
   }
 
-  if (program == null) {
+  if (!program) {
     // Mark the title to be populated when computed_program is defined,
     // returning an empty string here would disable the save button.
-    instance.attr("title", "");
-    instance.attr("_transient.default_title", instance.title);
+    instance.attr('title', '');
+    instance.attr('_transient.default_title', instance.title);
     return;
   }
   if (instance._transient.default_title !== instance.title) {
@@ -2097,17 +2096,57 @@ Mustache.registerHelper("default_audit_title", function (instance, options) {
 
   program = program.reify();
   new RefreshQueue().enqueue(program).trigger().then(function () {
-    title = (new Date()).getFullYear() + ": " + program.title + " - Audit";
-    default_title = title;
+    title = (new Date()).getFullYear() + ': ' + program.title + ' - Audit';
+    defaultTitle = title;
+    params = [{
+      object_name: 'Audit',
+      fields: ['title'],
+      order_by: [{
+        name: 'created_at',
+        desc: true
+      }],
+      limit: [0, 1],
+      filters: {
+        expression: {
+          op: {
+            name: 'AND'
+          },
+          left: {
+            object_name: 'Program',
+            op: {
+              name: 'relevant'
+            },
+            ids: [program.id]
+          },
+          right: {
+            left: 'title',
+            op: {
+              name: '~'
+            },
+            right: title + ' '
+          }
+        }
+      }
+    }];
 
-    GGRC.Models.Search.counts_for_types(title, ["Audit"]).then(function (result) {
-      // Next audit index should be bigger by one than previous, we have unique name policy
-      index = result.getCountFor("Audit") + 1;
-      title = title + " " + index;
-      instance.attr("title", title);
-      // this needs to be different than above, otherwise CanJS throws a strange error
-      instance.attr("_transient", {default_title: instance.title});
-    });
+    GGRC.Models.Search.findOneInQuery(params)
+      .then(function (data) {
+        var _audit = data[0].Audit.values[0];
+        var _number;
+        if (_audit) {
+          _number = parseInt(_audit.title.substr(_audit.title.length - 1), 10);
+          if (_.isNumber(_number) && !_.isNaN(_number)) {
+            title = title + ' ' + (_number + 1);
+          } else {
+            title = title + ' ' + 1;
+          }
+          instance.attr('title', title);
+          // this needs to be different than above, otherwise CanJS throws a strange error
+          instance.attr('_transient', {
+            default_title: instance.title
+          });
+        }
+      });
   });
 });
 
@@ -3628,4 +3667,4 @@ Example:
       return options.inverse(options.contexts);
     }
   );
-})(this, jQuery, can);
+})(this, jQuery, can, window._);

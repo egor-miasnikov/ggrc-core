@@ -3,10 +3,19 @@
     Licensed under http://www.apache.org/licenses/LICENSE-2.0 <see LICENSE file>
 */
 
-can.Model("GGRC.Models.Search", {
-
-  findOne : "GET /search"
-  , search : function(str, params) {
+can.Model('GGRC.Models.Search', {
+  findOne: 'GET /search',
+  findOneInQuery: function (data) {
+    return $.ajax({
+      type: 'POST',
+      headers: $.extend({
+        'Content-Type': 'application/json'
+      }, data.headers || {}),
+      url: '/query',
+      data: JSON.stringify(data || {})
+    });
+  },
+  search : function (str, params) {
     return this.findOne($.extend({q : str}, params));
   }
   , search_for_types : function(str, types, params) {
