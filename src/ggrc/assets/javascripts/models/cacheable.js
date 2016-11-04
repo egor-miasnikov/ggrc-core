@@ -1211,6 +1211,7 @@
       joins = _.filter(this._pending_joins, function (val) {
         return val.what !== obj;
       }.bind(this));
+
       if (len !== joins.length) {
         this.attr('_pending_joins').replace(joins);
       }
